@@ -2,6 +2,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from keras.models import Sequential
+from keras.layers import LSTM
 from keras.layers.convolutional import Conv1D, UpSampling1D
 from keras.layers.pooling import MaxPooling1D
 from keras.callbacks import EarlyStopping, ModelCheckpoint
@@ -9,16 +10,16 @@ from glob import glob
 from natsort import natsorted
 import soundfile as sf
 
-np.random.seed(0)
 
 ####################
 # make signal data #
 ####################
 type = 0
+structure = 'LSTM'  # Conv1D or LSTM
 
-input_paths = natsorted(glob('data/NoFX/*'))
+input_paths = natsorted(glob('data/mono/NoFX/*'))
 
-all_output_paths = natsorted(glob('data/*/Distortion/*'))
+all_output_paths = natsorted(glob('data/mono/Distortion/*'))
 output_paths = all_output_paths[type::3]
 
 in_len = 1024
@@ -69,7 +70,7 @@ trainy = output_data[:int(len(input_data) * 0.8)]
 valX = input_data[int(len(input_data) * 0.8):]
 valy = output_data[int(len(input_data) * 0.8):]
 
-model_save_path = f'./weight/dist{type}_weight{in_len}_{out_len}_{step}.h5'
+model_save_path = f'./weight/model_{structure}_dist_type{type}_weight{in_len}_{out_len}_{step}.h5'
 epochs = 100
 cp_cb = ModelCheckpoint(filepath=model_save_path, monitor='val_loss',
                         verbose=1, save_weights_only=True,
@@ -77,21 +78,28 @@ cp_cb = ModelCheckpoint(filepath=model_save_path, monitor='val_loss',
 es_cb = EarlyStopping(monitor='val_loss', patience=10, verbose=1, mode='auto')
 
 model = Sequential()
-model.add(Conv1D(64, 8, padding='same',
-                 input_shape=(in_len, 1), activation='relu'))
-model.add(MaxPooling1D(2, padding='same'))
-model.add(Conv1D(64, 8, padding='same', activation='relu'))
-model.add(MaxPooling1D(2, padding='same'))
-model.add(Conv1D(32, 8, padding='same', activation='relu'))
-model.add(MaxPooling1D(2, padding='same'))
 
-model.add(Conv1D(32, 8, padding='same', activation='relu'))
-model.add(UpSampling1D(2))
-model.add(Conv1D(64, 8, padding='same', activation='relu'))
-model.add(UpSampling1D(2))
-model.add(Conv1D(64, 8, padding='same', activation='relu'))
-model.add(UpSampling1D(2))
-model.add(Conv1D(1, 8, padding='same', activation='tanh'))
+if structure == 'Conv1D':
+    model.add(Conv1D(64, 8, padding='same',
+                     input_shape=(in_len, 1), activation='relu'))
+    model.add(MaxPooling1D(2, padding='same'))
+    model.add(Conv1D(64, 8, padding='same', activation='relu'))
+    model.add(MaxPooling1D(2, padding='same'))
+    model.add(Conv1D(32, 8, padding='same', activation='relu'))
+    model.add(MaxPooling1D(2, padding='same'))
+
+    model.add(Conv1D(32, 8, padding='same', activation='relu'))
+    model.add(UpSampling1D(2))
+    model.add(Conv1D(64, 8, padding='same', activation='relu'))
+    model.add(UpSampling1D(2))
+    model.add(Conv1D(64, 8, padding='same', activation='relu'))
+    model.add(UpSampling1D(2))
+    model.add(Conv1D(1, 8, padding='same', activation='tanh'))
+
+elif structure == 'LSTM':
+    model.add(LSTM(64, input_shape=(in_len, 1), return_sequences=True))
+    model.add(LSTM(64, return_sequences=True))
+    model.add(LSTM(1, return_sequences=True))
 
 model.compile(optimizer='adam', loss='mse')
 model.summary()
