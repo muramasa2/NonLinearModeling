@@ -15,7 +15,9 @@ import soundfile as sf
 # make signal data #
 ####################
 type = 0
-structure = 'LSTM'  # Conv1D or LSTM
+mode = 'denoise'
+structure = 'Conv1D'  # Conv1D or LSTM
+reg = 'on'
 
 input_paths = natsorted(glob('data/mono/NoFX/*'))
 
@@ -29,15 +31,17 @@ step = 64
 input_data = []
 output_data = []
 
-# wav_num=2
 
 for wav_num in range(int(len(input_paths)*0.8)):
 
     in_signal, fs = sf.read(input_paths[wav_num])
     out_signal, _ = sf.read(output_paths[wav_num])
 
-    # in_signal = in_signal/max(in_signal)
-    # out_signal = out_signal/max(out_signal)
+    if reg == 'on':
+        in_max = max(abs(in_signal))
+        out_max = max(abs(out_signal))
+        in_signal = in_signal/in_max
+        out_signal = out_signal/out_max
 
     t = np.arange(0, (len(in_signal))/fs, 1 / fs)
 
@@ -56,8 +60,14 @@ for wav_num in range(int(len(input_paths)*0.8)):
 input_data = np.array(input_data)
 output_data = np.array(output_data)
 
-input_data = input_data.reshape(-1, in_len, 1)
-output_data = output_data.reshape(-1, out_len, 1)
+if mode == 'modeling':
+    input_data = input_data.reshape(-1, in_len, 1)
+    output_data = output_data.reshape(-1, out_len, 1)
+
+elif mode == 'denoise':
+    input_data = output_data.reshape(-1, in_len, 1)
+    output_data = input_data.reshape(-1, out_len, 1)
+
 
 np.random.seed(0)
 np.random.shuffle(input_data)
@@ -70,7 +80,7 @@ trainy = output_data[:int(len(input_data) * 0.8)]
 valX = input_data[int(len(input_data) * 0.8):]
 valy = output_data[int(len(input_data) * 0.8):]
 
-model_save_path = f'./weight/model_{structure}_dist_type{type}_weight{in_len}_{out_len}_{step}.h5'
+model_save_path = f'./weight/model_{structure}_dist_type{type}_weight{in_len}_{out_len}_{step}_reg{reg}_{mode}.h5'
 epochs = 100
 cp_cb = ModelCheckpoint(filepath=model_save_path, monitor='val_loss',
                         verbose=1, save_weights_only=True,

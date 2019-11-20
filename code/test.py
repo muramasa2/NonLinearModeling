@@ -19,7 +19,7 @@ from scipy import hamming, hanning
 type = 0
 mode = 'denoise'
 structure = 'Conv1D'  # Conv1D or LSTM
-reg = 'off'
+reg = 'on'
 
 
 input_paths = natsorted(glob('data/mono/NoFX/*'))
@@ -41,10 +41,10 @@ in_signal, fs = sf.read(input_paths[wav_num])
 out_signal, _ = sf.read(output_paths[wav_num])
 
 if reg == 'on':
-    in_max = max(in_signal)
-    out_max = max(out_signal)
-    in_signal = in_signal/max(in_signal)
-    out_signal = out_signal/max(out_signal)
+    in_max = max(abs(in_signal))
+    out_max = max(abs(out_signal))
+    in_signal = in_signal/in_max
+    out_signal = out_signal/out_max
 
 t = np.arange(0, (len(in_signal))/fs, 1 / fs)
 
@@ -55,6 +55,7 @@ plt.xlabel('time[s]')
 plt.ylabel('amplitude[V]')
 plt.xlim([0, 2])
 plt.legend()
+
 
 for n in range(int((len(in_signal)-(in_len))/step)):
     input_data.append(in_signal[int(n * step):int(n * step + in_len)])
