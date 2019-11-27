@@ -127,7 +127,6 @@ np.random.seed(0)
 np.random.shuffle(valy)
 
 
-
 model_save_path = f'./weight/model_deconv_{structure}_dist_type{type}_weight{in_len}_{out_len}_{step}_reg{reg}_{mode}.h5'
 epochs = 100
 cp_cb = ModelCheckpoint(filepath=model_save_path, monitor='val_loss',
@@ -170,3 +169,4 @@ plt.xlabel('epoch')
 plt.ylabel('loss')
 plt.legend()
 plt.show()
+plt.savefig(f'model_deconv_{structure}_dist_type{type}_weight{in_len}_{out_len}_{step}_reg{reg}_{mode}.jpg')
