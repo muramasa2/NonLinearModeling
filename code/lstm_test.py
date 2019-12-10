@@ -2,7 +2,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from keras.models import Sequential, Model
-from keras.layers import Input, LSTM, Conv2DTranspose, Lambda, CuDNNLSTM
+from keras.layers import Input, LSTM, Conv2DTranspose, Lambda
 from keras.layers.convolutional import Conv1D, UpSampling1D
 from keras.layers.pooling import MaxPooling1D
 from keras.callbacks import EarlyStopping, ModelCheckpoint
@@ -13,6 +13,7 @@ import keras.backend as K
 from scipy.fftpack import fft, ifft
 from scipy import hamming, hanning
 from keras.losses import mean_squared_error
+
 
 def Conv1DTranspose(input_tensor, filters, kernel_size, strides=2, padding='same'):
     x = Lambda(lambda x: K.expand_dims(x, axis=2))(input_tensor)
@@ -26,27 +27,18 @@ def Conv1DTranspose(input_tensor, filters, kernel_size, strides=2, padding='same
 # make signal data #
 ####################
 type = 0
-mode = 'denoise'  # denoise or modeling
-structure = 'LSTM'  # Conv1D or LSTM
+mode = 'modeling'
+structure = 'Conv1D'  # Conv1D or LSTM
 reg = 'off'
 
 
-if mode == 'modeling':
-    input_paths = natsorted(glob('../data/mono/NoFX/*'))
+input_paths = natsorted(glob('data/mono/NoFX/*'))
 
-    all_output_paths = natsorted(glob('../data/mono/Distortion/*'))
-    output_paths = all_output_paths[type::3]
-    label = ['pred_dist', 'true_dist', 'clean']
-
-elif mode == 'denoise':
-    all_input_paths = natsorted(glob('../data/mono/Distortion/*'))
-    input_paths = all_input_paths[type::3]
-
-    output_paths = natsorted(glob('../data/mono/NoFX/*'))
-    label = ['pred_denoise', 'true_clean', 'distorted']
+all_output_paths = natsorted(glob('data/mono/Distortion/*'))
+output_paths = all_output_paths[type::3]
 
 in_len = 5280
-out_len = 5280
+out_len = 480
 step = 480
 
 np.random.seed(0)
@@ -57,8 +49,8 @@ np.random.shuffle(output_paths)
 input_data = []
 output_data = []
 # 374~498
-# wav_num = 499  #499 と 502
-wav_num = 502
+wav_num = 499  #499 と 502
+# wav_num = 502
 print('input:', input_paths[wav_num], 'output:', output_paths[wav_num])
 
 test_input_data = []
@@ -82,12 +74,54 @@ for n in range(int((len(in_signal)-(in_len))/step)):
 test_input_data = np.array(test_input_data)
 test_output_data = np.array(test_output_data)
 
-testX = test_input_data.reshape(-1, in_len, 1)
-testy = test_output_data.reshape(-1, out_len, 1)
+if mode == 'modeling':
+    testX = test_input_data.reshape(-1, in_len, 1)
+    testy = test_output_data.reshape(-1, out_len, 1)
+    label = ['pred_dist', 'true_dist', 'clean']
+elif mode == 'denoise':
+    testX = test_output_data.reshape(-1, in_len, 1)
+    testy = test_input_data.reshape(-1, out_len, 1)
+    label = ['pred_denoise', 'true_clean', 'distorted']
+#
+# model = Sequential()
+#
+# if structure == 'Conv1D':
+#     model.add(Conv1D(64, 8, padding='same',
+#                      input_shape=(in_len, 1), activation='relu'))
+#     model.add(MaxPooling1D(2, padding='same'))
+#     model.add(Conv1D(64, 8, padding='same', activation='relu'))
+#     model.add(MaxPooling1D(2, padding='same'))
+#     model.add(Conv1D(32, 8, padding='same', activation='relu'))
+#     model.add(MaxPooling1D(2, padding='same'))
+#
+#     model.add(Conv1D(32, 8, padding='same', activation='relu'))
+#     model.add(UpSampling1D(2))
+#     model.add(Conv1D(64, 8, padding='same', activation='relu'))
+#     model.add(UpSampling1D(2))
+#     model.add(Conv1D(64, 8, padding='same', activation='relu'))
+#     model.add(UpSampling1D(2))
+#     model.add(Conv1D(1, 8, padding='same', activation='tanh'))
 
-print('testX shape:', testX.shape)
-print('testy shape:', testy.shape)
+if structure == 'Conv1D':
+    inputs = Input(shape=(in_len, 1))
+    x = Conv1D(64, 8, padding='same', activation='relu')(inputs)
+    x = MaxPooling1D(2, padding='same')(x)
+    x = Conv1D(64, 8, padding='same', activation='relu')(x)
+    x = MaxPooling1D(2, padding='same')(x)
+    x = Conv1D(32, 8, padding='same', activation='relu')(x)
+    x = MaxPooling1D(2, padding='same')(x)
 
+    x = Conv1DTranspose(x, 32, 8)
+    x = Conv1DTranspose(x, 64, 8)
+    x = Conv1DTranspose(x, 64, 8)
+    x = Conv1D(1, 8, padding='same', activation='tanh')(x)
+
+    model = Model(inputs=inputs, outputs=x)
+
+elif structure == 'LSTM':
+    model.add(LSTM(64, input_shape=(in_len, 1), return_sequences=True))
+    model.add(LSTM(64, return_sequences=True))
+    model.add(LSTM(1, return_sequences=True))
 
 class LossFunc:
 
@@ -100,37 +134,13 @@ class LossFunc:
             y_true[:, -self.timesteps:, :],
             y_pred[:, -self.timesteps:, :])
 
+# model.compile(optimizer='adam', loss='mse')
+model.compile(optimizer='adam', loss=LossFunc(out_len))
 
-model = Sequential()
-
-if structure == 'Conv1D':
-    model.add(Conv1D(64, 8, padding='same',
-                     input_shape=(in_len, 1), activation='relu'))
-    model.add(MaxPooling1D(2, padding='same'))
-    model.add(Conv1D(64, 8, padding='same', activation='relu'))
-    model.add(MaxPooling1D(2, padding='same'))
-    model.add(Conv1D(32, 8, padding='same', activation='relu'))
-    model.add(MaxPooling1D(2, padding='same'))
-
-    model.add(Conv1D(32, 8, padding='same', activation='relu'))
-    model.add(UpSampling1D(2))
-    model.add(Conv1D(64, 8, padding='same', activation='relu'))
-    model.add(UpSampling1D(2))
-    model.add(Conv1D(64, 8, padding='same', activation='relu'))
-    model.add(UpSampling1D(2))
-    model.add(Conv1D(1, 8, padding='same', activation='tanh'))
-    model.compile(optimizer='adam', loss='mse')
-
-elif structure == 'LSTM':
-    model.add(CuDNNLSTM(64, input_shape=(in_len, 1), return_sequences=True))
-    model.add(CuDNNLSTM(64, return_sequences=True))
-    model.add(CuDNNLSTM(1, return_sequences=True))
-    model.compile(optimizer='adam', loss=LossFunc(out_len))
-
-
+# model.compile(optimizer='adam', loss='mse')
 model.summary()
 
-model_save_path = f'./weight/model_{structure}_dist_type{type}_weight{in_len}_{out_len}_{step}_reg{reg}_{mode}.h5'
+model_save_path = f'./weight/model_deconv_{structure}_dist_type{type}_weight{in_len}_{out_len}_{step}_reg{reg}_{mode}.h5'
 model.load_weights(model_save_path)
 
 for i in range(len(testX)):
@@ -158,9 +168,9 @@ plt.rcParams['figure.dpi'] = 300
 
 t = np.arange(0, (len(input))/fs, 1 / fs)
 plt.figure()
-plt.plot(t, input, 'r', linewidth=3, label=label[2])
-plt.plot(t, output, 'g', linewidth=3, label=label[1])
-plt.plot(t, predict[0], 'b', linewidth=3, label=label[0])
+plt.plot(t, output, 'g', linewidth=3, label=label[2], alpha=0.5)
+plt.plot(t, input, 'r', linewidth=3, label=label[1])
+plt.plot(t, predict[0], 'b', linewidth=3, label=label[0], alpha=0.5)
 plt.xlabel('time[s]')
 plt.ylabel('Amplitude[V]')
 plt.legend(loc='upper left',bbox_to_anchor=(1.05, 1))
@@ -208,7 +218,7 @@ plt.rcParams['figure.dpi'] = 300
 plt.figure(figsize=(15, 10))  # figure size in inch, 横×縦
 # plot
 plt.semilogx(f1, out_half_spectrum_dBV, 'r', label=label[0])
-plt.semilogx(f1, in_half_spectrum_dBV, 'b', label=label[1])
+plt.semilogx(f1, in_half_spectrum_dBV, 'b', label=label[1], alpha=0.5)
 plt.xlim([1,22050])
 plt.xlabel('Frequency[Hz]', fontsize=15)
 plt.ylabel('Amplitude[dB]', fontsize=15)
@@ -221,17 +231,16 @@ plt.savefig(f'figure/fft_{wav_num}_model_{structure}_dist_type{type}_{in_len}_{o
 
 
 sub = max(in_half_spectrum_dBV)-max(out_half_spectrum_dBV)
-print(sub)
 in_half_spectrum_dBV = in_half_spectrum_dBV - sub
 
 plt.figure(figsize=(15, 10))  # figure size in inch, 横×縦
 # plot
 plt.semilogx(f1, out_half_spectrum_dBV, 'r', label=label[0])
-plt.semilogx(f1, in_half_spectrum_dBV, 'b', label=label[1])
+plt.semilogx(f1, in_half_spectrum_dBV, 'b', label=label[1], alpha=0.5)
 plt.xlim([1,22050])
 plt.xlabel('Frequency[Hz]', fontsize=15)
 plt.ylabel('Amplitude[dB]', fontsize=15)
-# plt.ylim([-75,55])
+plt.ylim([-75,55])
 plt.legend(loc='upper right',fontsize=15)
 # save
 plt.savefig(f'figure/fix_fft_{wav_num}_model_{structure}_dist_type{type}_{in_len}_{out_len}_{step}_reg{reg}_{mode}.jpg',

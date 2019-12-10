@@ -10,7 +10,7 @@ from glob import glob
 from natsort import natsorted
 import soundfile as sf
 import keras.backend as K
-
+from keras.losses import mean_squared_error
 
 def Conv1DTranspose(input_tensor, filters, kernel_size, strides=2, padding='same'):
     x = Lambda(lambda x: K.expand_dims(x, axis=2))(input_tensor)
@@ -23,7 +23,7 @@ def Conv1DTranspose(input_tensor, filters, kernel_size, strides=2, padding='same
 ####################
 type = 0
 mode = 'modeling'  # modeling, denoise
-structure = 'Conv1D'  # Conv1D or LSTM
+structure = 'LSTM'  # Conv1D or LSTM
 reg = 'off'
 
 input_paths = natsorted(glob('data/mono/NoFX/*'))
@@ -31,9 +31,9 @@ input_paths = natsorted(glob('data/mono/NoFX/*'))
 all_output_paths = natsorted(glob('data/mono/Distortion/*'))
 output_paths = all_output_paths[type::3]
 
-in_len = 1024
-out_len = in_len
-step = 64
+in_len = 5280
+out_len = 480
+step = 480
 
 np.random.seed(0)
 np.random.shuffle(input_paths)
@@ -67,7 +67,7 @@ for wav_num in range(int(len(input_paths)*0.6)):  # 0~373
 
     for n in range(int((len(in_signal)-(in_len))/step)):
         train_input_data.append(in_signal[int(n * step):int(n * step + in_len)])
-        train_output_data.append(out_signal[int(n * step):int(n * step + out_len)])
+        train_output_data.append(out_signal[int(n * step)+(in_len-out_len):int(n * step + in_len)])
 
 val_input_data = []
 val_output_data = []
@@ -96,7 +96,7 @@ for wav_num in range(int(len(input_paths)*0.6), int(len(input_paths)*0.8)):  # 3
 
     for n in range(int((len(in_signal)-(in_len))/step)):
         val_input_data.append(in_signal[int(n * step):int(n * step + in_len)])
-        val_output_data.append(out_signal[int(n * step):int(n * step + out_len)])
+        val_output_data.append(out_signal[int(n * step)+(in_len-out_len):int(n * step + in_len)])
 
 train_input_data = np.array(train_input_data)
 train_output_data = np.array(train_output_data)
@@ -126,37 +126,68 @@ np.random.shuffle(valX)
 np.random.seed(0)
 np.random.shuffle(valy)
 
-model_save_path = f'./weight/model_deconv_{structure}_dist_type{type}_weight{in_len}_{out_len}_{step}_reg{reg}_{mode}.h5'
+
+trainX.shape
+trainy.shape
+valX.shape
+valy.shape
+int((len(trainX) - 1) / batch_size) + 1))
+def generator(input, output, batch_size):
+    for num_batch in range(len(input)//batch_size):
+        X = input[num_batch*batch_size:(num_batch*batch_size+batch_size), :, :]
+        y = output[num_batch*batch_size:(num_batch*batch_size+batch_size), :, :]
+
+        yield (X, y)
+
+
+model_save_path = f'./weight/model_{structure}_dist_type{type}_weight{in_len}_{out_len}_{step}_reg{reg}_{mode}.h5'
 epochs = 100
 cp_cb = ModelCheckpoint(filepath=model_save_path, monitor='val_loss',
                         verbose=1, save_weights_only=True,
                         save_best_only=True, mode='auto')
 es_cb = EarlyStopping(monitor='val_loss', patience=10, verbose=1, mode='auto')
 
+model = Sequential()
+
 if structure == 'Conv1D':
-    inputs = Input(shape=(in_len, 1))
-    x = Conv1D(64, 8, padding='same', activation='relu')(inputs)
-    x = MaxPooling1D(2, padding='same')(x)
-    x = Conv1D(64, 8, padding='same', activation='relu')(x)
-    x = MaxPooling1D(2, padding='same')(x)
-    x = Conv1D(32, 8, padding='same', activation='relu')(x)
-    x = MaxPooling1D(2, padding='same')(x)
+    model.add(Conv1D(64, 8, padding='same',
+                     input_shape=(in_len, 1), activation='relu'))
+    model.add(MaxPooling1D(2, padding='same'))
+    model.add(Conv1D(64, 8, padding='same', activation='relu'))
+    model.add(MaxPooling1D(2, padding='same'))
+    model.add(Conv1D(32, 8, padding='same', activation='relu'))
+    model.add(MaxPooling1D(2, padding='same'))
 
-    x = Conv1DTranspose(x, 32, 8)
-    x = Conv1DTranspose(x, 64, 8)
-    x = Conv1DTranspose(x, 64, 8)
-    x = Conv1D(1, 8, padding='same', activation='tanh')(x)
-
-    model = Model(inputs=inputs, outputs=x)
+    model.add(Conv1D(32, 8, padding='same', activation='relu'))
+    model.add(UpSampling1D(2))
+    model.add(Conv1D(64, 8, padding='same', activation='relu'))
+    model.add(UpSampling1D(2))
+    model.add(Conv1D(64, 8, padding='same', activation='relu'))
+    model.add(UpSampling1D(2))
+    model.add(Conv1D(1, 8, padding='same', activation='tanh'))
 elif structure == 'LSTM':
     model.add(LSTM(64, input_shape=(in_len, 1), return_sequences=True))
     model.add(LSTM(64, return_sequences=True))
     model.add(LSTM(1, return_sequences=True))
+    model.compile(optimizer='adam', loss=LossFunc(out_len))
 
-model.compile(optimizer='adam', loss='mse')
+class LossFunc:
+
+    def __init__(self, timesteps):
+        self.__name__ = "LossFunc"
+        self.timesteps = timesteps
+
+    def __call__(self, y_true, y_pred):
+        return mean_squared_error(
+            y_true[:, -self.timesteps:, :],
+            y_pred[:, -self.timesteps:, :])
+
+# model.compile(optimizer='adam', loss='mse')
+
+
 model.summary()
 
-history = model.fit(trainX, trainy, validation_data=(valX, valy),
+history = model.fitgenerator(generator(trainX, trainy, 32), validation_data=(valX, valy),
                     epochs=epochs, batch_size=32, verbose=1,
                     callbacks=[cp_cb, es_cb])
 
@@ -168,4 +199,4 @@ plt.xlabel('epoch')
 plt.ylabel('loss')
 plt.legend()
 plt.show()
-plt.savefig(f'model_deconv_{structure}_dist_type{type}_weight{in_len}_{out_len}_{step}_reg{reg}_{mode}.jpg')
+plt.savefig(f'model_{structure}_dist_type{type}_weight{in_len}_{out_len}_{step}_reg{reg}_{mode}.jpg')
