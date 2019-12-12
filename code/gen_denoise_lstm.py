@@ -1,22 +1,16 @@
-"""numpy module."""
+"""denoise nonlinear noise by using generator."""
 import numpy as np
-import matplotlib.pyplot as plt
-from keras.models import Sequential, Model
-from keras.layers import Input, LSTM, Conv2DTranspose, Lambda, CuDNNLSTM
-from keras.layers.convolutional import Conv1D, UpSampling1D
-from keras.layers.pooling import MaxPooling1D
-from keras.callbacks import EarlyStopping, ModelCheckpoint
 from glob import glob
-from natsort import natsorted
 import soundfile as sf
-import keras.backend as K
+from natsort import natsorted
+import matplotlib.pyplot as plt
+from keras.layers import CuDNNLSTM
+from keras.models import Sequential
 from keras.losses import mean_squared_error
+from keras.callbacks import EarlyStopping, ModelCheckpoint
+from keras.layers.pooling import MaxPooling1D
+from keras.layers.convolutional import Conv1D, UpSampling1D
 
-def Conv1DTranspose(input_tensor, filters, kernel_size, strides=2, padding='same'):
-    x = Lambda(lambda x: K.expand_dims(x, axis=2))(input_tensor)
-    x = Conv2DTranspose(filters=filters, kernel_size=(kernel_size, 1), strides=(strides, 1), padding=padding)(x)
-    x = Lambda(lambda x: K.squeeze(x, axis=2))(x)
-    return x
 
 ####################
 # make signal data #
@@ -39,8 +33,8 @@ elif mode == 'denoise':
     output_paths = natsorted(glob('../data/mono/NoFX/*'))
 
 
-in_len = 5280
-out_len = 5280
+in_len = 1024
+out_len = 1024
 step = 64
 
 np.random.seed(0)
@@ -63,16 +57,6 @@ for wav_num in range(int(len(output_paths)*0.6)):  # 0~373
         in_signal = in_signal/in_max
         out_signal = out_signal/out_max
 
-    t = np.arange(0, (len(in_signal))/fs, 1 / fs)
-
-    # plt.figure(1)
-    # plt.plot(t, out_signal, 'r', label='distorted')
-    # plt.plot(t, in_signal, 'b', label='clean')
-    # plt.xlabel('time[s]')
-    # plt.ylabel('amplitude[V]')
-    # plt.xlim([0, 2])
-    # plt.legend()
-
     for n in range(int((len(in_signal)-(in_len))/step)):
         train_input_data.append(in_signal[int(n * step):int(n * step + in_len)])
         train_output_data.append(out_signal[int(n * step)+(in_len-out_len):int(n * step + in_len)])
@@ -92,16 +76,6 @@ for wav_num in range(int(len(output_paths)*0.6), int(len(output_paths)*0.8)):  #
         in_signal = in_signal/in_max
         out_signal = out_signal/out_max
 
-    t = np.arange(0, (len(in_signal))/fs, 1 / fs)
-
-    # plt.figure(1)
-    # plt.plot(t, out_signal, 'r', label='distorted')
-    # plt.plot(t, in_signal, 'b', label='clean')
-    # plt.xlabel('time[s]')
-    # plt.ylabel('amplitude[V]')
-    # plt.xlim([0, 2])
-    # plt.legend()
-
     for n in range(int((len(in_signal)-(in_len))/step)):
         val_input_data.append(in_signal[int(n * step):int(n * step + in_len)])
         val_output_data.append(out_signal[int(n * step)+(in_len-out_len):int(n * step + in_len)])
@@ -111,13 +85,10 @@ train_output_data = np.array(train_output_data)
 val_input_data = np.array(val_input_data)
 val_output_data = np.array(val_output_data)
 
-
 trainX = train_input_data.reshape(-1, in_len, 1)
 trainy = train_output_data.reshape(-1, out_len, 1)
 valX = val_input_data.reshape(-1, in_len, 1)
 valy = val_output_data.reshape(-1, out_len, 1)
-
-
 
 np.random.seed(0)
 np.random.shuffle(trainX)
@@ -144,7 +115,6 @@ es_cb = EarlyStopping(monitor='val_loss', patience=10, verbose=1, mode='auto')
 model = Sequential()
 
 class LossFunc:
-
     def __init__(self, timesteps):
         self.__name__ = "LossFunc"
         self.timesteps = timesteps
@@ -171,33 +141,35 @@ if structure == 'Conv1D':
     model.add(UpSampling1D(2))
     model.add(Conv1D(1, 8, padding='same', activation='tanh'))
     model.compile(optimizer='adam', loss='mse')
+
 elif structure == 'LSTM':
     model.add(CuDNNLSTM(64, input_shape=(in_len, 1), return_sequences=True))
     model.add(CuDNNLSTM(64, return_sequences=True))
     model.add(CuDNNLSTM(1, return_sequences=True))
-    model.compile(optimizer='adam', loss=LossFunc(out_len))
+
+    if in_len == out_len:
+        model.compile(optimizer='adam', loss='mse')
+    else:
+        model.compile(optimizer='adam', loss=LossFunc(out_len))
 
 model.summary()
 
+
 def generator(input, output, batch_size):
     print('step:', (len(input) // batch_size))
-    num_batch = 0
 
     while True:
-        num_batch = 0
-        while num_batch < (len(input) // batch_size):
+        for num_batch in range(1,len(input) // batch_size+1):  # mini-batch loop
             X = input[num_batch*batch_size:(num_batch*batch_size+batch_size), :, :]
             y = output[num_batch*batch_size:(num_batch*batch_size+batch_size), :, :]
             yield (X, y)
-            print('num_batch:', num_batch)
-            num_batch += 1
-        print('finish minibatch')
+            print('\nnum_batch:', num_batch, '\n')
 
 batch_size = 32
 
-history = model.fit_generator(generator(trainX, trainy, batch_size), validation_data=(valX, valy),
-                    epochs=epochs, steps_per_epoch=len(trainX) // batch_size,
-                    verbose=1, callbacks=[cp_cb, es_cb])
+history = model.fit_generator(generator(trainX[:97], trainy[:97], batch_size), validation_data=(valX, valy),
+                    epochs=epochs, steps_per_epoch=len(trainX[:97]) // batch_size,
+                    max_queue_size = int(len(trainX) // batch_size), verbose=1, callbacks=[cp_cb, es_cb])
 
 print('finish learning!')
 
