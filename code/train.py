@@ -1,7 +1,12 @@
-"""denoise nonlinear noise by using generator."""
+"""train denoise or modeling nonlinear noise by using generator."""
+##################
+# import library #
+##################
+import argparse
 import numpy as np
 from glob import glob
 import soundfile as sf
+from datetime import date
 from natsort import natsorted
 import matplotlib.pyplot as plt
 from keras.layers import CuDNNLSTM
@@ -13,12 +18,47 @@ from keras.layers.convolutional import Conv1D, UpSampling1D
 
 
 ####################
-# make signal data #
+# load signal data #
 ####################
-type = 0
-mode = 'denoise'  # modeling, denoise
-structure = 'Conv1D'  # Conv1D or LSTM
-reg = 'off'
+parser = argparse.ArgumentParser()
+parser.add_argument('--type', '-t', type=int, default=0)
+parser.add_argument('--mode', '-m', type=str, default='denoise')
+parser.add_argument('--structure', '-s', type=str, default='LSTM')
+parser.add_argument('--reg', '-r', type=str, default='off')
+
+parser.add_argument('--batch_size', '-B', type=int, default=32)
+parser.add_argument('--epochs', '-E', type=int, default=100)
+
+parser.add_argument('--input_length', '-I', type=int, default=1024)
+parser.add_argument('--output_length', '-O', type=int, default=1024)
+parser.add_argument('--step', '-S', type=int, default=64)
+
+
+args = parser.parse_args()
+
+type = args.type  # dist type: 0, 1, 2
+mode = args.mode  # modeling, denoise
+structure = args.structure  # Conv1D or LSTM
+reg = args.reg  # on or off
+
+batch_size = args.batch_size
+epochs = args.epochs
+in_len = args.input_length
+out_len = args.output_length
+step = args.step
+
+
+print('type:', type)
+print('mode:', mode)
+print('structure:', structure)
+print('reg:', reg)
+
+print('------------------------')
+print('batch_size:', batch_size)
+print('epochs:', epochs)
+print('input_length:', in_len)
+print('output_length:', out_len)
+print('step:', step)
 
 if mode == 'modeling':
     input_paths = natsorted(glob('../data/mono/NoFX/*'))
@@ -32,21 +72,20 @@ elif mode == 'denoise':
 
     output_paths = natsorted(glob('../data/mono/NoFX/*'))
 
-
-in_len = 1024
-out_len = 1024
-step = 64
-
 np.random.seed(0)
 np.random.shuffle(input_paths)
 np.random.seed(0)
 np.random.shuffle(output_paths)
 
+
+########################
+# make train, val data #
+########################
 train_input_data = []
 train_output_data = []
 
 print('make train data')
-for wav_num in range(int(len(output_paths)*0.6)):  # 0~373
+for wav_num in range(int(len(output_paths)*0.6)):  # wav_num = 0~373
 
     in_signal, fs = sf.read(input_paths[wav_num])
     out_signal, _ = sf.read(output_paths[wav_num])
@@ -59,7 +98,7 @@ for wav_num in range(int(len(output_paths)*0.6)):  # 0~373
 
     for n in range(int((len(in_signal)-(in_len))/step)):
         train_input_data.append(in_signal[int(n * step):int(n * step + in_len)])
-        train_output_data.append(out_signal[int(n * step)+(in_len-out_len):int(n * step + in_len)])
+        train_output_data.append(out_signal[int(n * step):int(n * step + out_len)])
 
 val_input_data = []
 val_output_data = []
@@ -78,7 +117,7 @@ for wav_num in range(int(len(output_paths)*0.6), int(len(output_paths)*0.8)):  #
 
     for n in range(int((len(in_signal)-(in_len))/step)):
         val_input_data.append(in_signal[int(n * step):int(n * step + in_len)])
-        val_output_data.append(out_signal[int(n * step)+(in_len-out_len):int(n * step + in_len)])
+        val_output_data.append(out_signal[int(n * step):int(n * step + out_len)])
 
 train_input_data = np.array(train_input_data)
 train_output_data = np.array(train_output_data)
@@ -100,13 +139,19 @@ np.random.shuffle(valX)
 np.random.seed(0)
 np.random.shuffle(valy)
 
-print('trainX shape:',trainX.shape)
-print('trainy shape:',trainy.shape)
-print('valX shape:',valX.shape)
-print('valy shape:',valy.shape)
+print('trainX shape:', trainX.shape)
+print('trainy shape:', trainy.shape)
+print('valX shape:', valX.shape)
+print('valy shape:', valy.shape)
 
-model_save_path = f'../weight/generator_{mode}_{structure}_{in_len}_{out_len}_{step}.h5'
-epochs = 100
+###############
+# build model #
+###############
+year = date.today().year
+month = date.today().month
+day = date.today().day
+model_save_path = f'../weight/{year}{month}{day}/{structure}_{in_len}_{out_len}_{step}.h5'
+
 cp_cb = ModelCheckpoint(filepath=model_save_path, monitor='val_loss',
                         verbose=1, save_weights_only=True,
                         save_best_only=True, mode='auto')
@@ -114,15 +159,21 @@ es_cb = EarlyStopping(monitor='val_loss', patience=10, verbose=1, mode='auto')
 
 model = Sequential()
 
+
 class LossFunc:
+    """Loss mse."""
+
     def __init__(self, timesteps):
+        """Init."""
         self.__name__ = "LossFunc"
         self.timesteps = timesteps
 
     def __call__(self, y_true, y_pred):
+        """Call."""
         return mean_squared_error(
             y_true[:, -self.timesteps:, :],
             y_pred[:, -self.timesteps:, :])
+
 
 if structure == 'Conv1D':
     model.add(Conv1D(64, 8, padding='same',
@@ -155,29 +206,39 @@ elif structure == 'LSTM':
 model.summary()
 
 
-def generator(input, output, batch_size):
+def generator(input, output, batch):
+    """Generate data."""
     print('step:', (len(input) // batch_size))
 
     while True:
-        for num_batch in range(1,len(input) // batch_size+1):  # mini-batch loop
-            X = input[num_batch*batch_size:(num_batch*batch_size+batch_size), :, :]
-            y = output[num_batch*batch_size:(num_batch*batch_size+batch_size), :, :]
+        for num_batch in range(1, len(input) // batch+1):  # mini-batch loop
+            X = input[num_batch*batch_size:(num_batch*batch+batch), :, :]
+            y = output[num_batch*batch_size:(num_batch*batch+batch), :, :]
             yield (X, y)
             print('\nnum_batch:', num_batch, '\n')
 
-batch_size = 32
 
-history = model.fit_generator(generator(trainX[:97], trainy[:97], batch_size), validation_data=(valX, valy),
-                    epochs=epochs, steps_per_epoch=len(trainX[:97]) // batch_size,
-                    max_queue_size = int(len(trainX) // batch_size), verbose=1, callbacks=[cp_cb, es_cb])
+history = model.fit_generator(generator(trainX, trainy, batch_size),
+                              validation_data=(valX, valy), epochs=epochs,
+                              steps_per_epoch=len(trainX) // batch_size,
+                              max_queue_size=int(len(trainX) // batch_size),
+                              verbose=1, callbacks=[cp_cb, es_cb])
 
-print('finish learning!')
+print('Finish learning!')
+
+plt.figure(1)
+epoch = np.arange(len(history.history['loss']))
+plt.plot(epoch, history.history['loss'], label='loss')
+plt.plot(epoch, history.history['val_loss'], label='val_loss')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.legend()
+plt.savefig(f'../figure/{year}{month}{day}/{structure}_{in_len}_{out_len}_{step}.jpg')
 
 plt.figure(2)
-x = np.arange(len(history.history['loss']))
-plt.plot(x, history.history['loss'], label='loss')
-plt.plot(x, history.history['val_loss'], label='val_loss')
-plt.xlabel('epoch')
-plt.ylabel('loss')
+plt.plot(epoch, history.history['acc'], label='acc')
+plt.plot(epoch, history.history['val_acc'], label='val_acc')
+plt.xlabel('Epoch')
+plt.ylabel('MSE')
 plt.legend()
-plt.savefig(f'../generator_{mode}_{structure}_{in_len}_{out_len}_{step}.jpg')
+plt.savefig(f'../figure/{year}{month}{day}/{structure}_{in_len}_{out_len}_{step}.jpg')
