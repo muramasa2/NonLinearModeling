@@ -2,6 +2,7 @@
 ##################
 # import library #
 ##################
+import os
 import argparse
 import numpy as np
 from glob import glob
@@ -150,6 +151,8 @@ print('valy shape:', valy.shape)
 year = date.today().year
 month = date.today().month
 day = date.today().day
+os.makedirs(f'../weight/{year}{month}{day}', exist_ok=True)
+os.makedirs(f'../figure/{year}{month}{day}', exist_ok=True)
 model_save_path = f'../weight/{year}{month}{day}/{structure}_{in_len}_{out_len}_{step}.h5'
 
 cp_cb = ModelCheckpoint(filepath=model_save_path, monitor='val_loss',

@@ -2,6 +2,7 @@
 ##################
 # import library #
 ##################
+import os
 import argparse
 import numpy as np
 from glob import glob
@@ -204,6 +205,7 @@ plt.legend(loc='upper left', bbox_to_anchor=(1.05, 1))
 plt.savefig(f'../figure/{year}{month}{day}/signal_{structure}_{in_len}_{out_len}_{step}.jpg',
             bbox_inches="tight", pad_inches=0.05)
 
+os.makedirs(f'../result_wave/{year}{month}{day}', exist_ok=True)
 sf.write(f'../result_wave/{year}{month}{day}/{wav_num}_{structure}_{in_len}_{out_len}_{step}.wav',
          predict[0], 44100, subtype='PCM_16')  # 16bit 44.1kHz
 
