@@ -65,7 +65,7 @@ output_data = []
 in_signal, fs = sf.read(input_path)
 
 out_signal, _ = sf.read(output_path)
-R_out_signal = out_signal[:,0]
+R_out_signal = out_signal[:, 0]
 out_signal = R_out_signal[:len(in_signal)]
 
 if reg == 'on':
