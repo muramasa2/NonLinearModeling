@@ -26,9 +26,9 @@ parser.add_argument('--reg', '-r', type=str, default='off')
 parser.add_argument('--batch_size', '-B', type=int, default=32)
 parser.add_argument('--epochs', '-E', type=int, default=100)
 
-parser.add_argument('--input_length', '-I', type=int, default=1024)
-parser.add_argument('--output_length', '-O', type=int, default=1024)
-parser.add_argument('--step', '-S', type=int, default=64)
+parser.add_argument('--input_length', '-I', type=int, default=5280)
+parser.add_argument('--output_length', '-O', type=int, default=5280)
+parser.add_argument('--step', '-S', type=int, default=480)
 
 
 args = parser.parse_args()
@@ -53,8 +53,11 @@ print('input_length:', in_len)
 print('output_length:', out_len)
 print('step:', step)
 
-input_path = '../data/wav/beat_hirei_nuforce_curve_1.wav'
-output_path = '../data/wav/05 Beat It.wav'
+music='Beat_it'
+device='nuforce_curve'
+
+input_path = f'../data/wav/fix_{music}_{device}.wav'
+output_path = f'../data/wav/fix_{music}.wav'
 
 ########################
 # make train, val data #
@@ -65,8 +68,7 @@ output_data = []
 in_signal, fs = sf.read(input_path)
 
 out_signal, _ = sf.read(output_path)
-R_out_signal = out_signal[:, 0]
-out_signal = R_out_signal[:len(in_signal)]
+out_signal = out_signal[:len(in_signal)]
 
 if reg == 'on':
     in_max = max(abs(in_signal))
@@ -119,7 +121,7 @@ month = date.today().month
 day = date.today().day
 os.makedirs(f'../weight/{year}{month}{day}', exist_ok=True)
 os.makedirs(f'../figure/{year}{month}{day}', exist_ok=True)
-model_save_path = f'../weight/{year}{month}{day}/{structure}_{in_len}_{out_len}_{step}.h5'
+model_save_path = f'../weight/{year}{month}{day}/{music}_{device}_{structure}_{in_len}_{out_len}_{step}.h5'
 
 cp_cb = ModelCheckpoint(filepath=model_save_path, monitor='val_loss',
                         verbose=1, save_weights_only=True,
@@ -202,7 +204,7 @@ plt.plot(epoch, history.history['val_loss'], label='val_loss')
 plt.xlabel('Epoch')
 plt.ylabel('Loss')
 plt.legend()
-plt.savefig(f'../figure/{year}{month}{day}/{structure}_{in_len}_{out_len}_{step}.jpg')
+plt.savefig(f'../figure/{year}{month}{day}/{music}_{device}_{structure}_{in_len}_{out_len}_{step}.jpg')
 
 plt.figure(2)
 plt.plot(epoch, history.history['acc'], label='acc')
@@ -210,4 +212,4 @@ plt.plot(epoch, history.history['val_acc'], label='val_acc')
 plt.xlabel('Epoch')
 plt.ylabel('MSE')
 plt.legend()
-plt.savefig(f'../figure/{year}{month}{day}/{structure}_{in_len}_{out_len}_{step}.jpg')
+plt.savefig(f'../figure/{year}{month}{day}/{music}_{device}_{structure}_{in_len}_{out_len}_{step}.jpg')

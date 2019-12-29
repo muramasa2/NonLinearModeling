@@ -26,9 +26,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--structure', '-s', type=str, default='LSTM')
 parser.add_argument('--reg', '-r', type=str, default='off')
 
-parser.add_argument('--input_length', '-I', type=int, default=1024)
-parser.add_argument('--output_length', '-O', type=int, default=1024)
-parser.add_argument('--step', '-S', type=int, default=64)
+parser.add_argument('--input_length', '-I', type=int, default=5280)
+parser.add_argument('--output_length', '-O', type=int, default=5280)
+parser.add_argument('--step', '-S', type=int, default=480)
 
 args = parser.parse_args()
 
@@ -47,18 +47,23 @@ print('input_length:', in_len)
 print('output_length:', out_len)
 print('step:', step)
 
-input_path = '../data/wav/beat_hirei_nuforce_curve_1.wav'
-output_path = '../data/wav/05 Beat It.wav'
+music='Beat_it'
+device='nuforce_curve'
+
+input_path = f'../data/wav/fix_{music}_{device}.wav'
+output_path = f'../data/wav/fix_{music}.wav'
 label = ['pred_denoise', 'true_clean', 'distorted']
 
+########################
+# make train, val data #
+########################
 input_data = []
 output_data = []
 
-##################
-# make test data #
-##################
 in_signal, fs = sf.read(input_path)
+
 out_signal, _ = sf.read(output_path)
+out_signal = out_signal[:len(in_signal)]
 
 if reg == 'on':
     in_max = max(abs(in_signal))
@@ -137,7 +142,7 @@ model.summary()
 year = date.today().year
 month = date.today().month
 day = date.today().day
-model_save_path = f'../weight/{year}{month}{day}/{structure}_{in_len}_{out_len}_{step}.h5'
+model_save_path = f'../weight/{year}{month}{day}/{music}_{device}_{structure}_{in_len}_{out_len}_{step}.h5'
 model.load_weights(model_save_path)
 
 
@@ -179,7 +184,7 @@ plt.savefig(f'../figure/{year}{month}{day}/signal_{structure}_{in_len}_{out_len}
             bbox_inches="tight", pad_inches=0.05)
 
 os.makedirs(f'../result_wave/{year}{month}{day}', exist_ok=True)
-sf.write(f'../result_wave/{year}{month}{day}/{wav_num}_{structure}_{in_len}_{out_len}_{step}.wav',
+sf.write(f'../result_wave/{year}{month}{day}/{music}_{device}_{wav_num}_{structure}_{in_len}_{out_len}_{step}.wav',
          predict[0], 44100, subtype='PCM_16')  # 16bit 44.1kHz
 
 
@@ -195,7 +200,7 @@ def signal_fft(signal, N):  # FFTするsignal長と窓長Nは同じサンプル�
     return spectrum, half_spectrum_dBV
 
 
-path = f'./result_wave/{year}{month}{day}/{wav_num}_{structure}_{in_len}_{out_len}_{step}.wav'
+path = f'./result_wave/{year}{month}{day}/{music}_{device}_{wav_num}_{structure}_{in_len}_{out_len}_{step}.wav'
 out_data, fs = sf.read(path)
 _, out_half_spectrum_dBV = signal_fft(out_data, len(out_data))
 f2 = np.arange(0, fs/2, (fs/2)/out_half_spectrum_dBV.shape[0])  # 横軸周波数軸[Hz]
@@ -227,7 +232,7 @@ plt.ylabel('Amplitude[dB]', fontsize=15)
 plt.legend(loc='upper right', fontsize=15)
 
 # save
-plt.savefig(f'figure/{year}{month}{day}/fft_{wav_num}_{wav_num}_{structure}_{in_len}_{out_len}_{step}.jpg',
+plt.savefig(f'figure/{year}{month}{day}/fft_{music}_{device}_{wav_num}_{wav_num}_{structure}_{in_len}_{out_len}_{step}.jpg',
             bbox_inches="tight", pad_inches=0.05)
 
 sub = max(in_half_spectrum_dBV)-max(out_half_spectrum_dBV)
@@ -244,7 +249,7 @@ plt.ylabel('Amplitude[dB]', fontsize=15)
 plt.legend(loc='upper right', fontsize=15)
 
 # save
-plt.savefig(f'figure/{year}{month}{day}/fft_{wav_num}_{wav_num}_{structure}_{in_len}_{out_len}_{step}.jpg',
+plt.savefig(f'figure/{year}{month}{day}/fft_{music}_{device}_{wav_num}_{wav_num}_{structure}_{in_len}_{out_len}_{step}.jpg',
             bbox_inches="tight", pad_inches=0.05)
 
 
