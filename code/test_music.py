@@ -47,11 +47,11 @@ print('input_length:', in_len)
 print('output_length:', out_len)
 print('step:', step)
 
-music='Beat_it'
-device='nuforce_curve'
+music = 'Beat_it'
+devices = 'nuforce_curve'
 
-input_path = f'../data/wav/fix_{music}_{device}.wav'
-output_path = f'../data/wav/fix_{music}.wav'
+input_path = f'../data/wav/{music}/fix_{music}_{devices}.wav'
+output_path = f'../data/wav/{music}/fix_{music}.wav'
 label = ['pred_denoise', 'true_clean', 'distorted']
 
 ########################
@@ -142,7 +142,7 @@ model.summary()
 year = date.today().year
 month = date.today().month
 day = date.today().day
-model_save_path = f'../weight/{year}{month}{day}/{music}_{device}_{structure}_{in_len}_{out_len}_{step}.h5'
+model_save_path = f'../weight/{year}{month}{day}/{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.h5'
 model.load_weights(model_save_path)
 
 
@@ -180,11 +180,11 @@ plt.plot(t, predict[0], 'b', linewidth=3, label=label[0])
 plt.xlabel('time[s]')
 plt.ylabel('Amplitude[V]')
 plt.legend(loc='upper left', bbox_to_anchor=(1.05, 1))
-plt.savefig(f'../figure/{year}{month}{day}/signal_{structure}_{in_len}_{out_len}_{step}.jpg',
+plt.savefig(f'../figure/{year}{month}{day}/signal_{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.jpg',
             bbox_inches="tight", pad_inches=0.05)
 
 os.makedirs(f'../result_wave/{year}{month}{day}', exist_ok=True)
-sf.write(f'../result_wave/{year}{month}{day}/{music}_{device}_{wav_num}_{structure}_{in_len}_{out_len}_{step}.wav',
+sf.write(f'../result_wave/{year}{month}{day}/{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.wav',
          predict[0], 44100, subtype='PCM_16')  # 16bit 44.1kHz
 
 
@@ -200,7 +200,7 @@ def signal_fft(signal, N):  # FFTするsignal長と窓長Nは同じサンプル�
     return spectrum, half_spectrum_dBV
 
 
-path = f'./result_wave/{year}{month}{day}/{music}_{device}_{wav_num}_{structure}_{in_len}_{out_len}_{step}.wav'
+path = f'./result_wave/{year}{month}{day}/{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.wav'
 out_data, fs = sf.read(path)
 _, out_half_spectrum_dBV = signal_fft(out_data, len(out_data))
 f2 = np.arange(0, fs/2, (fs/2)/out_half_spectrum_dBV.shape[0])  # 横軸周波数軸[Hz]
@@ -232,7 +232,7 @@ plt.ylabel('Amplitude[dB]', fontsize=15)
 plt.legend(loc='upper right', fontsize=15)
 
 # save
-plt.savefig(f'figure/{year}{month}{day}/fft_{music}_{device}_{wav_num}_{wav_num}_{structure}_{in_len}_{out_len}_{step}.jpg',
+plt.savefig(f'figure/{year}{month}{day}/fft_{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.jpg',
             bbox_inches="tight", pad_inches=0.05)
 
 sub = max(in_half_spectrum_dBV)-max(out_half_spectrum_dBV)
@@ -249,23 +249,5 @@ plt.ylabel('Amplitude[dB]', fontsize=15)
 plt.legend(loc='upper right', fontsize=15)
 
 # save
-plt.savefig(f'figure/{year}{month}{day}/fft_{music}_{device}_{wav_num}_{wav_num}_{structure}_{in_len}_{out_len}_{step}.jpg',
+plt.savefig(f'figure/{year}{month}{day}/fft_{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.jpg',
             bbox_inches="tight", pad_inches=0.05)
-
-
-# def THD(spectrum, n, f):
-#     V = 10**(spectrum[f]/20)
-#     lin_V = []
-#
-#     for i in range(2,n+1):
-#         lin_V.append(10**(spectrum[f*i]/20))
-#
-#     lin_V = np.array(lin_V)**2
-#     thd = sum(lin_V)/V
-#
-#     return thd
-#
-# f = 1019
-# in_thd = THD(in_half_spectrum_dBV, 10, f)
-# out_thd = THD(out_half_spectrum_dBV, 10, f)
-# print(20*np.log10(in_thd), 20*np.log10(out_thd))
