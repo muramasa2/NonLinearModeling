@@ -10,10 +10,10 @@ import soundfile as sf
 from datetime import date
 from natsort import natsorted
 import matplotlib.pyplot as plt
-from keras.layers import CuDNNLSTM
-from keras.models import Sequential
+from keras.layers import CuDNNLSTM, BatchNormalization, Activation, Input, Concatenate
+from keras.models import Sequential, Model
 from keras.losses import mean_squared_error
-from keras.callbacks import EarlyStopping, ModelCheckpoint
+from keras.callbacks import ModelCheckpoint
 from keras.layers.pooling import MaxPooling1D
 from keras.layers.convolutional import Conv1D, UpSampling1D
 
@@ -158,7 +158,6 @@ model_save_path = f'../weight/{year}{month}{day}/{structure}_{in_len}_{out_len}_
 cp_cb = ModelCheckpoint(filepath=model_save_path, monitor='val_loss',
                         verbose=1, save_weights_only=True,
                         save_best_only=True, mode='auto')
-es_cb = EarlyStopping(monitor='val_loss', patience=10, verbose=1, mode='auto')
 
 model = Sequential()
 
@@ -166,20 +165,27 @@ model = Sequential()
 class LossFunc:
     """Loss mse."""
 
-    def __init__(self, timesteps):
+    def __init__(self, timesteps, mode):
         """Init."""
         self.__name__ = "LossFunc"
         self.timesteps = timesteps
+        self.mode = mode
 
     def __call__(self, y_true, y_pred):
         """Call."""
-        return mean_squared_error(
-            y_true[:, -self.timesteps:, :],
-            y_pred[:, -self.timesteps:, :])
+        if self.mode == 'modeling':
+            return mean_squared_error(
+                y_true[:, -self.timesteps:, :],
+                y_pred[:, -self.timesteps:, :])
+
+        elif self.mode == 'denoise':
+            return mean_squared_error(
+                y_true[:, :self.timesteps, :],
+                y_pred[:, :self.timesteps, :])
 
 
 if structure == 'Conv1D':
-    model.add(Conv1D(64, 8, padding='same',
+    model.add(Conv1D(filters=64, kernel_size=8, padding='same',
                      input_shape=(in_len, 1), activation='relu'))
     model.add(MaxPooling1D(2, padding='same'))
     model.add(Conv1D(64, 8, padding='same', activation='relu'))
@@ -193,8 +199,57 @@ if structure == 'Conv1D':
     model.add(UpSampling1D(2))
     model.add(Conv1D(64, 8, padding='same', activation='relu'))
     model.add(UpSampling1D(2))
+
     model.add(Conv1D(1, 8, padding='same', activation='tanh'))
     model.compile(optimizer='adam', loss='mse')
+
+elif structure == 'Unet':
+    input = Input((in_len, 1))
+    x = Conv1D(filters=64, kernel_size=8, padding='same')(input)
+    x = BatchNormalization()(x)
+    block1 = Activation("relu")(x)
+    x = MaxPooling1D(2, padding='same')(block1)
+
+    x = Conv1D(filters=64, kernel_size=8, padding='same')(x)
+    x = BatchNormalization()(x)
+    block2 = Activation("relu")(x)
+    x = MaxPooling1D(2, padding='same')(block2)
+
+    x = Conv1D(filters=32, kernel_size=8, padding='same')(x)
+    x = BatchNormalization()(x)
+    block3 = Activation("relu")(x)
+    x = MaxPooling1D(2, padding='same')(block3)
+
+    # Middle
+    x = Conv1D(filters=32, kernel_size=8, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = Activation("relu")(x)
+
+    # Decoder
+    x = UpSampling1D(2)(x)
+    x = Concatenate()([block3, x])
+    x = Conv1D(filters=32, kernel_size=8, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = Activation("relu")(x)
+
+    x = UpSampling1D(2)(x)
+    x = Concatenate()([block2, x])
+    x = Conv1D(filters=64, kernel_size=8, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = Activation("relu")(x)
+
+    x = UpSampling1D(2)(x)
+    x = Concatenate()([block1, x])
+    x = Conv1D(filters=64, kernel_size=8, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = Activation("relu")(x)
+
+    # output
+    x = Conv1D(1, 8, padding='same')(x)
+    output = Activation("sigmoid")(x)
+
+    model = Model(input, output)
+    model.compile(optimizer='adam', loss=LossFunc(out_len, mode=mode))
 
 elif structure == 'LSTM':
     model.add(CuDNNLSTM(64, input_shape=(in_len, 1), return_sequences=True))
@@ -204,7 +259,7 @@ elif structure == 'LSTM':
     if in_len == out_len:
         model.compile(optimizer='adam', loss='mse')
     else:
-        model.compile(optimizer='adam', loss=LossFunc(out_len))
+        model.compile(optimizer='adam', loss=LossFunc(out_len, mode=mode))
 
 model.summary()
 
@@ -225,7 +280,7 @@ history = model.fit_generator(generator(trainX, trainy, batch_size),
                               validation_data=(valX, valy), epochs=epochs,
                               steps_per_epoch=len(trainX) // batch_size,
                               max_queue_size=int(len(trainX) // batch_size),
-                              verbose=1, callbacks=[cp_cb, es_cb])
+                              verbose=1, callbacks=[cp_cb])
 
 print('Finish learning!')
 

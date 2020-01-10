@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from keras.layers import CuDNNLSTM
 from keras.models import Sequential
 from keras.losses import mean_squared_error
-from keras.callbacks import EarlyStopping, ModelCheckpoint
+from keras.callbacks import ModelCheckpoint
 from keras.layers.pooling import MaxPooling1D
 from keras.layers.convolutional import Conv1D, UpSampling1D
 
@@ -128,7 +128,7 @@ model_save_path = f'../weight/{year}{month}{day}/{music}_{devices}_{structure}_{
 cp_cb = ModelCheckpoint(filepath=model_save_path, monitor='val_loss',
                         verbose=1, save_weights_only=True,
                         save_best_only=True, mode='auto')
-es_cb = EarlyStopping(monitor='val_loss', patience=10, verbose=1, mode='auto')
+# es_cb = EarlyStopping(monitor='val_loss', patience=10, verbose=1, mode='auto')
 
 model = Sequential()
 
@@ -195,7 +195,7 @@ history = model.fit_generator(generator(trainX, trainy, batch_size),
                               validation_data=(valX, valy), epochs=epochs,
                               steps_per_epoch=len(trainX) // batch_size,
                               max_queue_size=int(len(trainX) // batch_size),
-                              verbose=1, callbacks=[cp_cb, es_cb])
+                              verbose=1, callbacks=cp_cb)
 
 print('Finish learning!')
 
