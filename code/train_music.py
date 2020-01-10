@@ -28,7 +28,7 @@ parser.add_argument('--epochs', '-E', type=int, default=100)
 
 parser.add_argument('--input_length', '-I', type=int, default=5280)
 parser.add_argument('--output_length', '-O', type=int, default=5280)
-parser.add_argument('--step', '-S', type=int, default=480)
+parser.add_argument('--step', '-S', type=int, default=64)
 
 
 args = parser.parse_args()
@@ -195,7 +195,7 @@ history = model.fit_generator(generator(trainX, trainy, batch_size),
                               validation_data=(valX, valy), epochs=epochs,
                               steps_per_epoch=len(trainX) // batch_size,
                               max_queue_size=int(len(trainX) // batch_size),
-                              verbose=1, callbacks=cp_cb)
+                              verbose=1, callbacks=[cp_cb])
 
 print('Finish learning!')
 
