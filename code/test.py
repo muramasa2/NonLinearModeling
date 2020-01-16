@@ -12,8 +12,8 @@ from scipy import hanning
 from scipy.fftpack import fft
 from natsort import natsorted
 import matplotlib.pyplot as plt
-from keras.layers import CuDNNLSTM
-from keras.models import Sequential
+from keras.layers import CuDNNLSTM, BatchNormalization, Activation, Input, Concatenate
+from keras.models import Sequential, Model
 from keras.losses import mean_squared_error
 from keras.layers.pooling import MaxPooling1D
 from keras.layers.convolutional import Conv1D, UpSampling1D
@@ -117,21 +117,27 @@ print('testy shape:', testy.shape)
 class LossFunc:
     """Loss mse."""
 
-    def __init__(self, timesteps):
+    def __init__(self, timesteps, mode):
         """Init."""
         self.__name__ = "LossFunc"
         self.timesteps = timesteps
+        self.mode = mode
 
     def __call__(self, y_true, y_pred):
         """Call."""
-        return mean_squared_error(
-            y_true[:, -self.timesteps:, :],
-            y_pred[:, -self.timesteps:, :])
+        if self.mode == 'modeling':
+            return mean_squared_error(
+                y_true[:, -self.timesteps:, :],
+                y_pred[:, -self.timesteps:, :])
 
+        elif self.mode == 'denoise':
+            return mean_squared_error(
+                y_true[:, :self.timesteps, :],
+                y_pred[:, :self.timesteps, :])
 
 model = Sequential()
 
-dsif structure == 'Conv1D':
+if structure == 'Conv1D':
     model.add(Conv1D(64, 8, padding='same',
                      input_shape=(in_len, 1), activation='relu'))
     model.add(MaxPooling1D(2, padding='same'))
@@ -148,6 +154,54 @@ dsif structure == 'Conv1D':
     model.add(UpSampling1D(2))
     model.add(Conv1D(1, 8, padding='same', activation='tanh'))
     model.compile(optimizer='adam', loss='mse')
+
+elif structure == 'Unet':
+    input = Input((in_len, 1))
+    x = Conv1D(filters=64, kernel_size=8, padding='same')(input)
+    x = BatchNormalization()(x)
+    block1 = Activation("relu")(x)
+    x = MaxPooling1D(2, padding='same')(block1)
+
+    x = Conv1D(filters=64, kernel_size=8, padding='same')(x)
+    x = BatchNormalization()(x)
+    block2 = Activation("relu")(x)
+    x = MaxPooling1D(2, padding='same')(block2)
+
+    x = Conv1D(filters=32, kernel_size=8, padding='same')(x)
+    x = BatchNormalization()(x)
+    block3 = Activation("relu")(x)
+    x = MaxPooling1D(2, padding='same')(block3)
+
+    # Middle
+    x = Conv1D(filters=32, kernel_size=8, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = Activation("relu")(x)
+
+    # Decoder
+    x = UpSampling1D(2)(x)
+    x = Concatenate()([block3, x])
+    x = Conv1D(filters=32, kernel_size=8, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = Activation("relu")(x)
+
+    x = UpSampling1D(2)(x)
+    x = Concatenate()([block2, x])
+    x = Conv1D(filters=64, kernel_size=8, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = Activation("relu")(x)
+
+    x = UpSampling1D(2)(x)
+    x = Concatenate()([block1, x])
+    x = Conv1D(filters=64, kernel_size=8, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = Activation("relu")(x)
+
+    # output
+    x = Conv1D(1, 8, padding='same')(x)
+    output = Activation("sigmoid")(x)
+
+    model = Model(input, output)
+    model.compile(optimizer='adam', loss=LossFunc(out_len, mode=mode))
 
 elif structure == 'LSTM':
     model.add(CuDNNLSTM(64, input_shape=(in_len, 1), return_sequences=True))
@@ -186,6 +240,8 @@ if reg == 'on':
     predict = predict*out_max
     input = input*in_max
     output = output*out_max
+
+os.makedirs(f'../figure/{year}{month}{day}', exist_ok=True)
 
 plt.rcParams["font.size"] = 15  # 全体のフォントサイズが変更されます。
 plt.rcParams['xtick.direction'] = 'in'  # x axis in
