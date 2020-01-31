@@ -160,7 +160,7 @@ for i in range(len(testX)):
         predict = np.concatenate((predict, predy[:, in_len-step:]), axis=1)
 
 input = test_input_data[:len(predict[0])]
-output = test_out_signal[:len(predict[0])]
+output = test_output_data[:len(predict[0])]
 
 if reg == 'on':
     predict = predict*out_max
@@ -178,9 +178,9 @@ plt.rcParams['figure.dpi'] = 300
 os.makedirs(f'../figure/{year}{month}{day}', exist_ok=True)
 t = np.arange(0, (len(input))/fs, 1 / fs)
 plt.figure()
-plt.plot(t, input, 'r', linewidth=3, label=label[2])
-plt.plot(t, output, 'g', linewidth=3, label=label[1])
-plt.plot(t, predict[0], 'b', linewidth=3, label=label[0])
+plt.plot(t, output, 'g', linewidth=3, label=label[1])  # true
+plt.plot(t, input, 'r', linewidth=3, label=label[2])  # destorted
+plt.plot(t, predict[0], 'b', linewidth=3, label=label[0])  # denoise
 plt.xlabel('time[s]')
 plt.ylabel('Amplitude[V]')
 plt.legend(loc='upper left', bbox_to_anchor=(1.05, 1))
