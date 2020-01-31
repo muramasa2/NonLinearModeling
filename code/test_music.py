@@ -63,7 +63,10 @@ output_data = []
 in_signal, fs = sf.read(input_path)
 
 out_signal, _ = sf.read(output_path)
-out_signal = out_signal[:len(in_signal)]
+length = np.min([len(in_signal), len(out_signal)])
+
+in_signal = in_signal[:length]
+out_signal = out_signal[:length]
 
 if reg == 'on':
     in_max = max(abs(in_signal))
@@ -82,10 +85,8 @@ test_input_data = input_data[int(len(input_data)*0.8):]
 test_output_data = output_data[int(len(output_data)*0.8):]
 
 testX = test_input_data.reshape(-1, in_len, 1)
-testy = test_output_data.reshape(-1, out_len, 1)
 
 print('testX shape:', testX.shape)
-print('testy shape:', testy.shape)
 
 ###############
 # build model #
@@ -109,7 +110,7 @@ class LossFunc:
 
 model = Sequential()
 
-dsif structure == 'Conv1D':
+if structure == 'Conv1D':
     model.add(Conv1D(64, 8, padding='same',
                      input_shape=(in_len, 1), activation='relu'))
     model.add(MaxPooling1D(2, padding='same'))
@@ -142,7 +143,8 @@ model.summary()
 year = date.today().year
 month = date.today().month
 day = date.today().day
-model_save_path = f'../weight/{year}{month}{day}/{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.h5'
+# model_save_path = f'../weight/{year}{month}{day}/{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.h5'
+model_save_path = f'../weight/2020115/{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.h5'
 model.load_weights(model_save_path)
 
 
@@ -157,8 +159,8 @@ for i in range(len(testX)):
     else:
         predict = np.concatenate((predict, predy[:, in_len-step:]), axis=1)
 
-input = in_signal[:len(predict[0])]
-output = out_signal[:len(predict[0])]
+input = test_input_data[:len(predict[0])]
+output = test_out_signal[:len(predict[0])]
 
 if reg == 'on':
     predict = predict*out_max
@@ -172,6 +174,8 @@ plt.rcParams['axes.linewidth'] = 1.0  # axis line width
 plt.rcParams['axes.grid'] = True  # make grid
 plt.rcParams['figure.dpi'] = 300
 
+
+os.makedirs(f'../figure/{year}{month}{day}', exist_ok=True)
 t = np.arange(0, (len(input))/fs, 1 / fs)
 plt.figure()
 plt.plot(t, input, 'r', linewidth=3, label=label[2])
@@ -200,14 +204,14 @@ def signal_fft(signal, N):  # FFTするsignal長と窓長Nは同じサンプル�
     return spectrum, half_spectrum_dBV
 
 
-path = f'./result_wave/{year}{month}{day}/{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.wav'
+path = f'../result_wave/{year}{month}{day}/{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.wav'
 out_data, fs = sf.read(path)
 _, out_half_spectrum_dBV = signal_fft(out_data, len(out_data))
 f2 = np.arange(0, fs/2, (fs/2)/out_half_spectrum_dBV.shape[0])  # 横軸周波数軸[Hz]
 plt.semilogx(f2, out_half_spectrum_dBV)
 
 
-in_data, fs = sf.read(output_paths[wav_num])
+in_data, fs = sf.read(output_path)
 in_data = in_data[:len(out_data)]
 _, in_half_spectrum_dBV = signal_fft(in_data, len(in_data))
 f1 = np.arange(0, fs/2, (fs/2)/in_half_spectrum_dBV.shape[0])  # 横軸周波数軸[Hz]
@@ -232,7 +236,7 @@ plt.ylabel('Amplitude[dB]', fontsize=15)
 plt.legend(loc='upper right', fontsize=15)
 
 # save
-plt.savefig(f'figure/{year}{month}{day}/fft_{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.jpg',
+plt.savefig(f'../figure/{year}{month}{day}/fft_{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.jpg',
             bbox_inches="tight", pad_inches=0.05)
 
 sub = max(in_half_spectrum_dBV)-max(out_half_spectrum_dBV)
@@ -249,5 +253,5 @@ plt.ylabel('Amplitude[dB]', fontsize=15)
 plt.legend(loc='upper right', fontsize=15)
 
 # save
-plt.savefig(f'figure/{year}{month}{day}/fft_{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.jpg',
+plt.savefig(f'../figure/{year}{month}{day}/fft_{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.jpg',
             bbox_inches="tight", pad_inches=0.05)
