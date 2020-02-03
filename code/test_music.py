@@ -5,12 +5,10 @@
 import os
 import argparse
 import numpy as np
-from glob import glob
 import soundfile as sf
 from datetime import date
 from scipy import hanning
 from scipy.fftpack import fft
-from natsort import natsorted
 import matplotlib.pyplot as plt
 from keras.layers import CuDNNLSTM
 from keras.models import Sequential
@@ -24,7 +22,7 @@ from keras.layers.convolutional import Conv1D, UpSampling1D
 ####################
 parser = argparse.ArgumentParser()
 parser.add_argument('--structure', '-s', type=str, default='LSTM')
-parser.add_argument('--reg', '-r', type=str, default='off')
+parser.add_argument('--reg', default=store_true)
 
 parser.add_argument('--input_length', '-I', type=int, default=5280)
 parser.add_argument('--output_length', '-O', type=int, default=5280)
@@ -68,7 +66,7 @@ length = np.min([len(in_signal), len(out_signal)])
 in_signal = in_signal[:length]
 out_signal = out_signal[:length]
 
-if reg == 'on':
+if reg:
     in_max = max(abs(in_signal))
     out_max = max(abs(out_signal))
     in_signal = in_signal/in_max
@@ -159,10 +157,10 @@ for i in range(len(testX)):
     else:
         predict = np.concatenate((predict, predy[:, in_len-step:]), axis=1)
 
-input = test_input_data[:len(predict[0])]
-output = test_output_data[:len(predict[0])]
+input = in_signal[:int(len(in_signal)*0.8)][:len(predict)]
+output = out_signal[:int(len(out_signal)*0.8)][:len(predict)]
 
-if reg == 'on':
+if reg:
     predict = predict*out_max
     input = input*in_max
     output = output*out_max
@@ -179,8 +177,8 @@ os.makedirs(f'../figure/{year}{month}{day}', exist_ok=True)
 t = np.arange(0, (len(input))/fs, 1 / fs)
 plt.figure()
 plt.plot(t, output, 'g', linewidth=3, label=label[1])  # true
-plt.plot(t, input, 'r', linewidth=3, label=label[2])  # destorted
 plt.plot(t, predict[0], 'b', linewidth=3, label=label[0])  # denoise
+plt.plot(t, input, 'r', linewidth=3, label=label[2])  # destorted
 plt.xlabel('time[s]')
 plt.ylabel('Amplitude[V]')
 plt.legend(loc='upper left', bbox_to_anchor=(1.05, 1))
@@ -253,5 +251,5 @@ plt.ylabel('Amplitude[dB]', fontsize=15)
 plt.legend(loc='upper right', fontsize=15)
 
 # save
-plt.savefig(f'../figure/{year}{month}{day}/fft_{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.jpg',
+plt.savefig(f'../figure/{year}{month}{day}/fix_fft_{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.jpg',
             bbox_inches="tight", pad_inches=0.05)
