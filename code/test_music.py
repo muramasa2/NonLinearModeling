@@ -22,7 +22,7 @@ from keras.layers.convolutional import Conv1D, UpSampling1D
 ####################
 parser = argparse.ArgumentParser()
 parser.add_argument('--structure', '-s', type=str, default='LSTM')
-parser.add_argument('--reg', default=store_true)
+parser.add_argument('--reg', '-r', type=str, default='mm')
 
 parser.add_argument('--input_length', '-I', type=int, default=5280)
 parser.add_argument('--output_length', '-O', type=int, default=5280)
@@ -66,11 +66,20 @@ length = np.min([len(in_signal), len(out_signal)])
 in_signal = in_signal[:length]
 out_signal = out_signal[:length]
 
-if reg:
-    in_max = max(abs(in_signal))
-    out_max = max(abs(out_signal))
-    in_signal = in_signal/in_max
-    out_signal = out_signal/out_max
+if reg == 'mm':
+    in_signal = in_signal.reshape(-1, 1)
+    in_mmscaler = preprocessing.MinMaxScaler() # インスタンスの作成
+    in_mmscaler.fit(in_signal)           # xの最大・最小を計算
+    in_signal = in_mmscaler.transform(in_signal) # xを変換
+
+    out_signal = out_signal.reshape(-1, 1)
+    out_mmscaler = preprocessing.MinMaxScaler() # インスタンスの作成
+    out_mmscaler.fit(out_signal)           # xの最大・最小を計算
+    out_signal = out_mmscaler.transform(out_signal) # xを変換
+
+elif reg == 'std':
+    in_signal = scipy.stats.zscore(in_signal)
+    out_signal = scipy.stats.zscore(out_signal)
 
 for n in range(int((len(in_signal)-(in_len))/step)):
     input_data.append(in_signal[int(n * step):int(n * step + in_len)])
@@ -142,7 +151,7 @@ year = date.today().year
 month = date.today().month
 day = date.today().day
 # model_save_path = f'../weight/{year}{month}{day}/{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.h5'
-model_save_path = f'../weight/2020115/{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.h5'
+model_save_path = f'../weight/2020115/{music}_{devices}_{structure}_{reg}_{in_len}_{out_len}_{step}.h5'
 model.load_weights(model_save_path)
 
 
@@ -159,11 +168,6 @@ for i in range(len(testX)):
 
 input = in_signal[:int(len(in_signal)*0.8)][:len(predict)]
 output = out_signal[:int(len(out_signal)*0.8)][:len(predict)]
-
-if reg:
-    predict = predict*out_max
-    input = input*in_max
-    output = output*out_max
 
 plt.rcParams["font.size"] = 15  # 全体のフォントサイズが変更されます。
 plt.rcParams['xtick.direction'] = 'in'  # x axis in
@@ -182,11 +186,19 @@ plt.plot(t, input, 'r', linewidth=3, label=label[2])  # destorted
 plt.xlabel('time[s]')
 plt.ylabel('Amplitude[V]')
 plt.legend(loc='upper left', bbox_to_anchor=(1.05, 1))
-plt.savefig(f'../figure/{year}{month}{day}/signal_{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.jpg',
+plt.savefig(f'../figure/{year}{month}{day}/signal_{music}_{devices}_{structure}_{reg}_{in_len}_{out_len}_{step}.jpg',
             bbox_inches="tight", pad_inches=0.05)
 
 os.makedirs(f'../result_wave/{year}{month}{day}', exist_ok=True)
-sf.write(f'../result_wave/{year}{month}{day}/{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.wav',
+
+if reg == 'mm':
+    predict = predict[0].reshape(-1, 1)
+    predict = out_mmscaler.inverse_transform(predict) # xを変換
+
+elif reg == 'std':
+    predict = predict[0] * predict[0].std() + predict[0].mean()
+    
+sf.write(f'../result_wave/{year}{month}{day}/{music}_{devices}_{structure}_{reg}_{in_len}_{out_len}_{step}.wav',
          predict[0], 44100, subtype='PCM_16')  # 16bit 44.1kHz
 
 
@@ -202,7 +214,7 @@ def signal_fft(signal, N):  # FFTするsignal長と窓長Nは同じサンプル�
     return spectrum, half_spectrum_dBV
 
 
-path = f'../result_wave/{year}{month}{day}/{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.wav'
+path = f'../result_wave/{year}{month}{day}/{music}_{devices}_{structure}_{reg}_{in_len}_{out_len}_{step}.wav'
 out_data, fs = sf.read(path)
 _, out_half_spectrum_dBV = signal_fft(out_data, len(out_data))
 f2 = np.arange(0, fs/2, (fs/2)/out_half_spectrum_dBV.shape[0])  # 横軸周波数軸[Hz]
@@ -234,7 +246,7 @@ plt.ylabel('Amplitude[dB]', fontsize=15)
 plt.legend(loc='upper right', fontsize=15)
 
 # save
-plt.savefig(f'../figure/{year}{month}{day}/fft_{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.jpg',
+plt.savefig(f'../figure/{year}{month}{day}/fft_{music}_{devices}_{structure}_{reg}_{in_len}_{out_len}_{step}.jpg',
             bbox_inches="tight", pad_inches=0.05)
 
 sub = max(in_half_spectrum_dBV)-max(out_half_spectrum_dBV)
@@ -251,5 +263,5 @@ plt.ylabel('Amplitude[dB]', fontsize=15)
 plt.legend(loc='upper right', fontsize=15)
 
 # save
-plt.savefig(f'../figure/{year}{month}{day}/fix_fft_{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.jpg',
+plt.savefig(f'../figure/{year}{month}{day}/fix_fft_{music}_{devices}_{structure}_{reg}_{in_len}_{out_len}_{step}.jpg',
             bbox_inches="tight", pad_inches=0.05)

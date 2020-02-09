@@ -16,7 +16,8 @@ from keras.losses import mean_squared_error
 from keras.callbacks import ModelCheckpoint
 from keras.layers.pooling import MaxPooling1D
 from keras.layers.convolutional import Conv1D, UpSampling1D
-
+import scipy.stats
+from sklearn import preprocessing
 
 ####################
 # load signal data #
@@ -25,14 +26,14 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--type', '-t', type=int, default=0)
 parser.add_argument('--mode', '-m', type=str, default='denoise')
 parser.add_argument('--structure', '-s', type=str, default='LSTM')
-parser.add_argument('--reg', '-r', type=str, default='off')
+parser.add_argument('--reg', '-r', type=str, default='mm')
 
 parser.add_argument('--batch_size', '-B', type=int, default=32)
 parser.add_argument('--epochs', '-E', type=int, default=100)
 
-parser.add_argument('--input_length', '-I', type=int, default=1024)
-parser.add_argument('--output_length', '-O', type=int, default=1024)
-parser.add_argument('--step', '-S', type=int, default=64)
+parser.add_argument('--input_length', '-I', type=int, default=5000)
+parser.add_argument('--output_length', '-O', type=int, default=5000)
+parser.add_argument('--step', '-S', type=int, default=500)
 
 
 args = parser.parse_args()
@@ -91,11 +92,23 @@ for wav_num in range(int(len(output_paths)*0.6)):  # wav_num = 0~373
     in_signal, fs = sf.read(input_paths[wav_num])
     out_signal, _ = sf.read(output_paths[wav_num])
 
-    if reg == 'on':
-        in_max = max(abs(in_signal))
-        out_max = max(abs(out_signal))
-        in_signal = in_signal/in_max
-        out_signal = out_signal/out_max
+    if reg == 'mm':
+        in_signal = in_signal.reshape(-1, 1)
+        in_mmscaler = preprocessing.MinMaxScaler() # インスタンスの作成
+        in_mmscaler.fit(in_signal)           # xの最大・最小を計算
+        in_signal = in_mmscaler.transform(in_signal) # xを変換
+
+        out_signal = out_signal.reshape(-1, 1)
+        out_mmscaler = preprocessing.MinMaxScaler() # インスタンスの作成
+        out_mmscaler.fit(out_signal)           # xの最大・最小を計算
+        out_signal = out_mmscaler.transform(out_signal) # xを変換
+
+    elif reg == 'std':
+        in_signal = scipy.stats.zscore(in_signal)
+        out_signal = scipy.stats.zscore(out_signal)
+
+    in_signal = in_signal - in_signal[0]
+    out_signal = out_signal - out_signal[0]
 
     for n in range(int((len(in_signal)-(in_len))/step)):
         train_input_data.append(in_signal[int(n * step):int(n * step + in_len)])
@@ -153,7 +166,7 @@ month = date.today().month
 day = date.today().day
 os.makedirs(f'../weight/{year}{month}{day}', exist_ok=True)
 os.makedirs(f'../figure/{year}{month}{day}', exist_ok=True)
-model_save_path = f'../weight/{year}{month}{day}/{structure}_{in_len}_{out_len}_{step}.h5'
+model_save_path = f'../weight/{year}{month}{day}/{structure}_{reg}_{in_len}_{out_len}_{step}.h5'
 
 cp_cb = ModelCheckpoint(filepath=model_save_path, monitor='val_loss',
                         verbose=1, save_weights_only=True,
@@ -201,7 +214,10 @@ if structure == 'Conv1D':
     model.add(UpSampling1D(2))
 
     model.add(Conv1D(1, 8, padding='same', activation='tanh'))
-    model.compile(optimizer='adam', loss='mse')
+    if in_len == out_len:
+        model.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
+    else:
+        model.compile(optimizer='adam', loss=LossFunc(out_len, mode=mode), metrics=['accuracy'])
 
 elif structure == 'Unet':
     input = Input((in_len, 1))
@@ -249,7 +265,10 @@ elif structure == 'Unet':
     output = Activation("sigmoid")(x)
 
     model = Model(input, output)
-    model.compile(optimizer='adam', loss=LossFunc(out_len, mode=mode))
+    if in_len == out_len:
+        model.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
+    else:
+        model.compile(optimizer='adam', loss=LossFunc(out_len, mode=mode), metrics=['accuracy'])
 
 elif structure == 'LSTM':
     model.add(CuDNNLSTM(64, input_shape=(in_len, 1), return_sequences=True))
@@ -257,23 +276,23 @@ elif structure == 'LSTM':
     model.add(CuDNNLSTM(1, return_sequences=True))
 
     if in_len == out_len:
-        model.compile(optimizer='adam', loss='mse')
+        model.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
     else:
-        model.compile(optimizer='adam', loss=LossFunc(out_len, mode=mode))
+        model.compile(optimizer='adam', loss=LossFunc(out_len, mode=mode), metrics=['accuracy'])
 
 model.summary()
 
 
 def generator(input, output, batch):
     """Generate data."""
-    print('step:', (len(input) // batch_size))
+    # print('step:', (len(input) // batch_size))
 
     while True:
         for num_batch in range(1, len(input) // batch+1):  # mini-batch loop
             X = input[num_batch*batch_size:(num_batch*batch+batch), :, :]
             y = output[num_batch*batch_size:(num_batch*batch+batch), :, :]
             yield (X, y)
-            print('\nnum_batch:', num_batch, '\n')
+            # print('\nnum_batch:', num_batch, '\n')
 
 
 history = model.fit_generator(generator(trainX, trainy, batch_size),
@@ -291,7 +310,9 @@ plt.plot(epoch, history.history['val_loss'], label='val_loss')
 plt.xlabel('Epoch')
 plt.ylabel('Loss')
 plt.legend()
-plt.savefig(f'../figure/{year}{month}{day}/{structure}_{in_len}_{out_len}_{step}.jpg')
+plt.savefig(f'../figure/{year}{month}{day}/{structure}_{reg}_{in_len}_{out_len}_{step}.jpg')
+
+print('best_loss:', history.history['val_loss'])
 
 plt.figure(2)
 plt.plot(epoch, history.history['acc'], label='acc')
@@ -299,4 +320,4 @@ plt.plot(epoch, history.history['val_acc'], label='val_acc')
 plt.xlabel('Epoch')
 plt.ylabel('MSE')
 plt.legend()
-plt.savefig(f'../figure/{year}{month}{day}/{structure}_{in_len}_{out_len}_{step}.jpg')
+plt.savefig(f'../figure/{year}{month}{day}/{structure}_{reg}_{in_len}_{out_len}_{step}.jpg')

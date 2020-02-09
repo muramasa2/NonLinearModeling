@@ -17,7 +17,8 @@ from keras.models import Sequential, Model
 from keras.losses import mean_squared_error
 from keras.layers.pooling import MaxPooling1D
 from keras.layers.convolutional import Conv1D, UpSampling1D
-
+import scipy.stats
+from sklearn import preprocessing
 
 ####################
 # load signal data #
@@ -90,11 +91,23 @@ print('make test data')
 in_signal, fs = sf.read(input_paths[wav_num])
 out_signal, _ = sf.read(output_paths[wav_num])
 
-if reg == 'on':
-    in_max = max(abs(in_signal))
-    out_max = max(abs(out_signal))
-    in_signal = in_signal/in_max
-    out_signal = out_signal/out_max
+if reg == 'mm':
+    in_signal = in_signal.reshape(-1, 1)
+    in_mmscaler = preprocessing.MinMaxScaler() # インスタンスの作成
+    in_mmscaler.fit(in_signal)           # xの最大・最小を計算
+    in_signal = in_mmscaler.transform(in_signal) # xを変換
+
+    out_signal = out_signal.reshape(-1, 1)
+    out_mmscaler = preprocessing.MinMaxScaler() # インスタンスの作成
+    out_mmscaler.fit(out_signal)           # xの最大・最小を計算
+    out_signal = out_mmscaler.transform(out_signal) # xを変換
+
+elif reg == 'std':
+    in_signal = scipy.stats.zscore(in_signal)
+    out_signal = scipy.stats.zscore(out_signal)
+
+in_signal = in_signal - in_signal[0]
+out_signal = out_signal - out_signal[0]
 
 for n in range(int((len(in_signal)-(in_len))/step)):
     test_input_data.append(in_signal[int(n * step):int(n * step + in_len)])
@@ -218,7 +231,7 @@ model.summary()
 year = date.today().year
 month = date.today().month
 day = date.today().day
-model_save_path = f'../weight/{year}{month}{day}/{structure}_{in_len}_{out_len}_{step}.h5'
+model_save_path = f'../weight/{year}{month}{day}/{structure}_{reg}_{in_len}_{out_len}_{step}.h5'
 model.load_weights(model_save_path)
 
 
@@ -236,10 +249,6 @@ for i in range(len(testX)):
 input = in_signal[:len(predict[0])]
 output = out_signal[:len(predict[0])]
 
-if reg == 'on':
-    predict = predict*out_max
-    input = input*in_max
-    output = output*out_max
 
 os.makedirs(f'../figure/{year}{month}{day}', exist_ok=True)
 
@@ -258,12 +267,19 @@ plt.plot(t, predict[0], 'b', linewidth=3, label=label[0])
 plt.xlabel('time[s]')
 plt.ylabel('Amplitude[V]')
 plt.legend(loc='upper left', bbox_to_anchor=(1.05, 1))
-plt.savefig(f'../figure/{year}{month}{day}/signal_{structure}_{in_len}_{out_len}_{step}.jpg',
+plt.savefig(f'../figure/{year}{month}{day}/signal_{structure}_{reg}_{in_len}_{out_len}_{step}.jpg',
             bbox_inches="tight", pad_inches=0.05)
 
 os.makedirs(f'../result_wave/{year}{month}{day}', exist_ok=True)
-sf.write(f'../result_wave/{year}{month}{day}/{wav_num}_{structure}_{in_len}_{out_len}_{step}.wav',
-         predict[0], 44100, subtype='PCM_16')  # 16bit 44.1kHz
+if reg == 'mm':
+    predict = predict[0].reshape(-1, 1)
+    predict = out_mmscaler.inverse_transform(predict) # xを変換
+
+elif reg == 'std':
+    predict = predict[0] * predict[0].std() + predict[0].mean()
+
+sf.write(f'../result_wave/{year}{month}{day}/{wav_num}_{structure}_{reg}_{in_len}_{out_len}_{step}.wav',
+         predict, 44100, subtype='PCM_16')  # 16bit 44.1kHz
 
 
 def signal_fft(signal, N):  # FFTするsignal長と窓長Nは同じサンプル数に固定する
@@ -278,7 +294,7 @@ def signal_fft(signal, N):  # FFTするsignal長と窓長Nは同じサンプル�
     return spectrum, half_spectrum_dBV
 
 
-path = f'./result_wave/{year}{month}{day}/{wav_num}_{structure}_{in_len}_{out_len}_{step}.wav'
+path = f'./result_wave/{year}{month}{day}/{wav_num}_{structure}_{reg}_{in_len}_{out_len}_{step}.wav'
 out_data, fs = sf.read(path)
 _, out_half_spectrum_dBV = signal_fft(out_data, len(out_data))
 f2 = np.arange(0, fs/2, (fs/2)/out_half_spectrum_dBV.shape[0])  # 横軸周波数軸[Hz]
@@ -310,7 +326,7 @@ plt.ylabel('Amplitude[dB]', fontsize=15)
 plt.legend(loc='upper right', fontsize=15)
 
 # save
-plt.savefig(f'figure/{year}{month}{day}/fft_{wav_num}_{wav_num}_{structure}_{in_len}_{out_len}_{step}.jpg',
+plt.savefig(f'figure/{year}{month}{day}/fft_{wav_num}}_{structure}_{reg}_{in_len}_{out_len}_{step}.jpg',
             bbox_inches="tight", pad_inches=0.05)
 
 sub = max(in_half_spectrum_dBV)-max(out_half_spectrum_dBV)
@@ -327,23 +343,5 @@ plt.ylabel('Amplitude[dB]', fontsize=15)
 plt.legend(loc='upper right', fontsize=15)
 
 # save
-plt.savefig(f'figure/{year}{month}{day}/fft_{wav_num}_{wav_num}_{structure}_{in_len}_{out_len}_{step}.jpg',
+plt.savefig(f'figure/{year}{month}{day}/fix_fft_{wav_num}_{structure}_{reg}_{in_len}_{out_len}_{step}.jpg',
             bbox_inches="tight", pad_inches=0.05)
-
-
-# def THD(spectrum, n, f):
-#     V = 10**(spectrum[f]/20)
-#     lin_V = []
-#
-#     for i in range(2,n+1):
-#         lin_V.append(10**(spectrum[f*i]/20))
-#
-#     lin_V = np.array(lin_V)**2
-#     thd = sum(lin_V)/V
-#
-#     return thd
-#
-# f = 1019
-# in_thd = THD(in_half_spectrum_dBV, 10, f)
-# out_thd = THD(out_half_spectrum_dBV, 10, f)
-# print(20*np.log10(in_thd), 20*np.log10(out_thd))

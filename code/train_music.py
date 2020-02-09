@@ -14,21 +14,22 @@ from keras.losses import mean_squared_error
 from keras.callbacks import ModelCheckpoint
 from keras.layers.pooling import MaxPooling1D
 from keras.layers.convolutional import Conv1D, UpSampling1D
-
+import scipy.stats
+from sklearn import preprocessing
 
 ####################
 # load signal data #
 ####################
 parser = argparse.ArgumentParser()
 parser.add_argument('--structure', '-s', type=str, default='LSTM')
-parser.add_argument('--reg', '-r', type=str, default='off')
+parser.add_argument('--reg', '-r', type=str, default='mm')
 
 parser.add_argument('--batch_size', '-B', type=int, default=32)
 parser.add_argument('--epochs', '-E', type=int, default=100)
 
-parser.add_argument('--input_length', '-I', type=int, default=5280)
-parser.add_argument('--output_length', '-O', type=int, default=5280)
-parser.add_argument('--step', '-S', type=int, default=64)
+parser.add_argument('--input_length', '-I', type=int, default=5000)
+parser.add_argument('--output_length', '-O', type=int, default=5000)
+parser.add_argument('--step', '-S', type=int, default=500)
 
 
 args = parser.parse_args()
@@ -71,11 +72,20 @@ out_signal, _ = sf.read(output_path)
 in_signal = in_signal[:min(len(in_signal), len(out_signal))]
 out_signal = out_signal[:min(len(in_signal), len(out_signal))]
 
-if reg == 'on':
-    in_max = max(abs(in_signal))
-    out_max = max(abs(out_signal))
-    in_signal = in_signal/in_max
-    out_signal = out_signal/out_max
+if reg == 'mm':
+    in_signal = in_signal.reshape(-1, 1)
+    in_mmscaler = preprocessing.MinMaxScaler() # インスタンスの作成
+    in_mmscaler.fit(in_signal)           # xの最大・最小を計算
+    in_signal = in_mmscaler.transform(in_signal) # xを変換
+
+    out_signal = out_signal.reshape(-1, 1)
+    out_mmscaler = preprocessing.MinMaxScaler() # インスタンスの作成
+    out_mmscaler.fit(out_signal)           # xの最大・最小を計算
+    out_signal = out_mmscaler.transform(out_signal) # xを変換
+
+elif reg == 'std':
+    in_signal = scipy.stats.zscore(in_signal)
+    out_signal = scipy.stats.zscore(out_signal)
 
 for n in range(int((len(in_signal)-(in_len))/step)):
     input_data.append(in_signal[int(n * step):int(n * step + in_len)])
@@ -123,7 +133,7 @@ day = date.today().day
 os.makedirs(f'../weight/{year}{month}{day}', exist_ok=True)
 os.makedirs(f'../figure/{year}{month}{day}', exist_ok=True)
 
-model_save_path = f'../weight/{year}{month}{day}/{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.h5'
+model_save_path = f'../weight/{year}{month}{day}/{music}_{devices}_{structure}_{reg}_{in_len}_{out_len}_{step}.h5'
 
 cp_cb = ModelCheckpoint(filepath=model_save_path, monitor='val_loss',
                         verbose=1, save_weights_only=True,
@@ -164,7 +174,10 @@ if structure == 'Conv1D':
     model.add(Conv1D(64, 8, padding='same', activation='relu'))
     model.add(UpSampling1D(2))
     model.add(Conv1D(1, 8, padding='same', activation='tanh'))
-    model.compile(optimizer='adam', loss='mse')
+    if in_len == out_len:
+        model.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
+    else:
+        model.compile(optimizer='adam', loss=LossFunc(out_len, mode=mode), metrics=['accuracy'])
 
 elif structure == 'LSTM':
     model.add(CuDNNLSTM(64, input_shape=(in_len, 1), return_sequences=True))
@@ -172,9 +185,9 @@ elif structure == 'LSTM':
     model.add(CuDNNLSTM(1, return_sequences=True))
 
     if in_len == out_len:
-        model.compile(optimizer='adam', loss='mse')
+        model.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
     else:
-        model.compile(optimizer='adam', loss=LossFunc(out_len))
+        model.compile(optimizer='adam', loss=LossFunc(out_len, mode=mode), metrics=['accuracy'])
 
 model.summary()
 
@@ -207,6 +220,8 @@ plt.xlabel('Epoch')
 plt.ylabel('Loss')
 plt.legend()
 plt.savefig(f'../figure/{year}{month}{day}/{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.jpg')
+
+print('best_loss:', history.history['val_loss'])
 
 plt.figure(2)
 plt.plot(epoch, history.history['acc'], label='acc')
