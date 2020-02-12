@@ -15,7 +15,8 @@ from keras.models import Sequential
 from keras.losses import mean_squared_error
 from keras.layers.pooling import MaxPooling1D
 from keras.layers.convolutional import Conv1D, UpSampling1D
-
+import scipy.stats
+from sklearn import preprocessing
 
 ####################
 # load signal data #
@@ -24,9 +25,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--structure', '-s', type=str, default='LSTM')
 parser.add_argument('--reg', '-r', type=str, default='mm')
 
-parser.add_argument('--input_length', '-I', type=int, default=5280)
-parser.add_argument('--output_length', '-O', type=int, default=5280)
-parser.add_argument('--step', '-S', type=int, default=480)
+parser.add_argument('--input_length', '-I', type=int, default=5000)
+parser.add_argument('--output_length', '-O', type=int, default=5000)
+parser.add_argument('--step', '-S', type=int, default=500)
 
 args = parser.parse_args()
 
@@ -46,7 +47,9 @@ print('output_length:', out_len)
 print('step:', step)
 
 music = 'Beat_it'
-devices = 'nuforce_curve'
+# music = 'Take_five'
+# devices = 'nuforce_curve'
+devices = 'teac_curve'
 
 input_path = f'../data/wav/{music}/fix_{music}_{devices}.wav'
 output_path = f'../data/wav/{music}/fix_{music}.wav'
@@ -150,8 +153,9 @@ model.summary()
 year = date.today().year
 month = date.today().month
 day = date.today().day
-# model_save_path = f'../weight/{year}{month}{day}/{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.h5'
-model_save_path = f'../weight/2020115/{music}_{devices}_{structure}_{reg}_{in_len}_{out_len}_{step}.h5'
+
+# model_save_path = f'../weight/{year}{month}{day}/{music}_{devices}_{structure}_{reg}_{in_len}_{out_len}_{step}.h5'
+model_save_path = f'/home/murata/project/NonLinearModeling/weight/20191230/Beat_it_teac_curve_LSTM_5280_5280_64.h5'
 model.load_weights(model_save_path)
 
 
@@ -166,8 +170,8 @@ for i in range(len(testX)):
     else:
         predict = np.concatenate((predict, predy[:, in_len-step:]), axis=1)
 
-input = in_signal[:int(len(in_signal)*0.8)][:len(predict)]
-output = out_signal[:int(len(out_signal)*0.8)][:len(predict)]
+input = in_signal[:int(len(in_signal)*0.8)][:len(predict[0])]
+output = out_signal[:int(len(out_signal)*0.8)][:len(predict[0])]
 
 plt.rcParams["font.size"] = 15  # 全体のフォントサイズが変更されます。
 plt.rcParams['xtick.direction'] = 'in'  # x axis in
@@ -178,11 +182,12 @@ plt.rcParams['figure.dpi'] = 300
 
 
 os.makedirs(f'../figure/{year}{month}{day}', exist_ok=True)
+
 t = np.arange(0, (len(input))/fs, 1 / fs)
 plt.figure()
+plt.plot(t, input, 'r', linewidth=3, label=label[2])  # destorted
 plt.plot(t, output, 'g', linewidth=3, label=label[1])  # true
 plt.plot(t, predict[0], 'b', linewidth=3, label=label[0])  # denoise
-plt.plot(t, input, 'r', linewidth=3, label=label[2])  # destorted
 plt.xlabel('time[s]')
 plt.ylabel('Amplitude[V]')
 plt.legend(loc='upper left', bbox_to_anchor=(1.05, 1))
@@ -197,9 +202,11 @@ if reg == 'mm':
 
 elif reg == 'std':
     predict = predict[0] * predict[0].std() + predict[0].mean()
-    
+else:
+    predict = predict[0]
+
 sf.write(f'../result_wave/{year}{month}{day}/{music}_{devices}_{structure}_{reg}_{in_len}_{out_len}_{step}.wav',
-         predict[0], 44100, subtype='PCM_16')  # 16bit 44.1kHz
+         predict, 44100, subtype='PCM_16')  # 16bit 44.1kHz
 
 
 def signal_fft(signal, N):  # FFTするsignal長と窓長Nは同じサンプル数に固定する
@@ -238,9 +245,9 @@ plt.rcParams['figure.dpi'] = 300
 
 # plot
 plt.figure(figsize=(15, 10))  # figure size in inch, 横×縦
-plt.semilogx(f1, out_half_spectrum_dBV, 'r', label=label[0])
 plt.semilogx(f1, in_half_spectrum_dBV, 'b', label=label[1])
-plt.xlim([1, 22050])
+plt.semilogx(f1, out_half_spectrum_dBV, 'r', label=label[0])
+plt.xlim([20, 22000])
 plt.xlabel('Frequency[Hz]', fontsize=15)
 plt.ylabel('Amplitude[dB]', fontsize=15)
 plt.legend(loc='upper right', fontsize=15)
@@ -255,9 +262,9 @@ in_half_spectrum_dBV = in_half_spectrum_dBV - sub
 
 # plot
 plt.figure(figsize=(15, 10))  # figure size in inch, 横×縦
-plt.semilogx(f1, out_half_spectrum_dBV, 'r', label=label[0])
 plt.semilogx(f1, in_half_spectrum_dBV, 'b', label=label[1])
-plt.xlim([1, 22050])
+plt.semilogx(f1, out_half_spectrum_dBV, 'r', label=label[0])
+plt.xlim([20, 22000])
 plt.xlabel('Frequency[Hz]', fontsize=15)
 plt.ylabel('Amplitude[dB]', fontsize=15)
 plt.legend(loc='upper right', fontsize=15)

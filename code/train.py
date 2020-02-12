@@ -4,20 +4,20 @@
 ##################
 import os
 import argparse
+import scipy.stats
 import numpy as np
 from glob import glob
 import soundfile as sf
 from datetime import date
 from natsort import natsorted
 import matplotlib.pyplot as plt
-from keras.layers import CuDNNLSTM, BatchNormalization, Activation, Input, Concatenate
+from sklearn import preprocessing
 from keras.models import Sequential, Model
 from keras.losses import mean_squared_error
 from keras.callbacks import ModelCheckpoint
 from keras.layers.pooling import MaxPooling1D
 from keras.layers.convolutional import Conv1D, UpSampling1D
-import scipy.stats
-from sklearn import preprocessing
+from keras.layers import CuDNNLSTM, BatchNormalization, Activation, Input, Concatenate
 
 ####################
 # load signal data #
@@ -30,18 +30,16 @@ parser.add_argument('--reg', '-r', type=str, default='mm')
 
 parser.add_argument('--batch_size', '-B', type=int, default=32)
 parser.add_argument('--epochs', '-E', type=int, default=100)
-
 parser.add_argument('--input_length', '-I', type=int, default=5000)
 parser.add_argument('--output_length', '-O', type=int, default=5000)
 parser.add_argument('--step', '-S', type=int, default=500)
 
-
 args = parser.parse_args()
 
 type = args.type  # dist type: 0, 1, 2
-mode = args.mode  # modeling, denoise
-structure = args.structure  # Conv1D or LSTM
-reg = args.reg  # on or off
+mode = args.mode  # modeling or denoise
+structure = args.structure  # Conv1D or Unet or LSTM
+reg = args.reg  # std or mm
 
 batch_size = args.batch_size
 epochs = args.epochs
@@ -89,10 +87,11 @@ train_output_data = []
 print('make train data')
 for wav_num in range(int(len(output_paths)*0.6)):  # wav_num = 0~373
 
-    in_signal, fs = sf.read(input_paths[wav_num])
-    out_signal, _ = sf.read(output_paths[wav_num])
+    in_signal_, fs = sf.read(input_paths[wav_num])
+    out_signal_, _ = sf.read(output_paths[wav_num])
 
     if reg == 'mm':
+        print('std')
         in_signal = in_signal.reshape(-1, 1)
         in_mmscaler = preprocessing.MinMaxScaler() # インスタンスの作成
         in_mmscaler.fit(in_signal)           # xの最大・最小を計算
@@ -104,8 +103,12 @@ for wav_num in range(int(len(output_paths)*0.6)):  # wav_num = 0~373
         out_signal = out_mmscaler.transform(out_signal) # xを変換
 
     elif reg == 'std':
-        in_signal = scipy.stats.zscore(in_signal)
-        out_signal = scipy.stats.zscore(out_signal)
+        print('std')
+        in_signal = scipy.stats.zscore(in_signal_)
+        out_signal = scipy.stats.zscore(out_signal_)
+    else:
+        in_signal = in_signal_
+        out_signal = out_signal_
 
     in_signal = in_signal - in_signal[0]
     out_signal = out_signal - out_signal[0]
@@ -157,6 +160,16 @@ print('trainX shape:', trainX.shape)
 print('trainy shape:', trainy.shape)
 print('valX shape:', valX.shape)
 print('valy shape:', valy.shape)
+#
+# plt.figure(1)
+# plt.plot(in_signal)
+# plt.plot(out_signal)
+# plt.show()
+
+plt.figure(2)
+plt.plot(in_signal_)
+plt.plot(out_signal_)
+plt.show()
 
 ###############
 # build model #

@@ -1,4 +1,6 @@
 """train denoise or modeling nonlinear noise by using generator."""
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
 ##################
 # import library #
 ##################
@@ -54,7 +56,7 @@ print('input_length:', in_len)
 print('output_length:', out_len)
 print('step:', step)
 
-music = 'Beat_it'
+music = 'Take_five'
 devices = 'nuforce_curve'
 
 input_path = f'../data/wav/{music}/fix_{music}_{devices}.wav'
@@ -74,9 +76,9 @@ out_signal = out_signal[:min(len(in_signal), len(out_signal))]
 
 if reg == 'mm':
     in_signal = in_signal.reshape(-1, 1)
-    in_mmscaler = preprocessing.MinMaxScaler() # インスタンスの作成
-    in_mmscaler.fit(in_signal)           # xの最大・最小を計算
-    in_signal = in_mmscaler.transform(in_signal) # xを変換
+    in_mmscaler = preprocessing.MinMaxScaler()
+    in_mmscaler.fit(in_signal)
+    in_signal = in_mmscaler.transform(in_signal)
 
     out_signal = out_signal.reshape(-1, 1)
     out_mmscaler = preprocessing.MinMaxScaler() # インスタンスの作成
@@ -138,7 +140,6 @@ model_save_path = f'../weight/{year}{month}{day}/{music}_{devices}_{structure}_{
 cp_cb = ModelCheckpoint(filepath=model_save_path, monitor='val_loss',
                         verbose=1, save_weights_only=True,
                         save_best_only=True, mode='auto')
-# es_cb = EarlyStopping(monitor='val_loss', patience=10, verbose=1, mode='auto')
 
 model = Sequential()
 
@@ -194,14 +195,14 @@ model.summary()
 
 def generator(input, output, batch):
     """Generate data."""
-    print('step:', (len(input) // batch_size))
+    # print('step:', (len(input) // batch_size))
 
     while True:
         for num_batch in range(1, len(input) // batch+1):  # mini-batch loop
             X = input[num_batch*batch_size:(num_batch*batch+batch), :, :]
             y = output[num_batch*batch_size:(num_batch*batch+batch), :, :]
             yield (X, y)
-            print('\nnum_batch:', num_batch, '\n')
+            # print('\nnum_batch:', num_batch, '\n')
 
 
 history = model.fit_generator(generator(trainX, trainy, batch_size),
@@ -217,9 +218,9 @@ epoch = np.arange(len(history.history['loss']))
 plt.plot(epoch, history.history['loss'], label='loss')
 plt.plot(epoch, history.history['val_loss'], label='val_loss')
 plt.xlabel('Epoch')
-plt.ylabel('Loss')
+plt.ylabel('MSE')
 plt.legend()
-plt.savefig(f'../figure/{year}{month}{day}/{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.jpg')
+plt.savefig(f'../figure/{year}{month}{day}/loss_{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.jpg')
 
 print('best_loss:', history.history['val_loss'])
 
@@ -227,6 +228,6 @@ plt.figure(2)
 plt.plot(epoch, history.history['acc'], label='acc')
 plt.plot(epoch, history.history['val_acc'], label='val_acc')
 plt.xlabel('Epoch')
-plt.ylabel('MSE')
+plt.ylabel('Acc')
 plt.legend()
-plt.savefig(f'../figure/{year}{month}{day}/{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.jpg')
+plt.savefig(f'../figure/{year}{month}{day}/acc_{music}_{devices}_{structure}_{in_len}_{out_len}_{step}.jpg')

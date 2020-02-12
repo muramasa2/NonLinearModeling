@@ -29,9 +29,9 @@ parser.add_argument('--mode', '-m', type=str, default='denoise')
 parser.add_argument('--structure', '-s', type=str, default='LSTM')
 parser.add_argument('--reg', '-r', type=str, default='off')
 
-parser.add_argument('--input_length', '-I', type=int, default=1024)
-parser.add_argument('--output_length', '-O', type=int, default=1024)
-parser.add_argument('--step', '-S', type=int, default=64)
+parser.add_argument('--input_length', '-I', type=int, default=5000)
+parser.add_argument('--output_length', '-O', type=int, default=5000)
+parser.add_argument('--step', '-S', type=int, default=500)
 
 args = parser.parse_args()
 
@@ -231,7 +231,8 @@ model.summary()
 year = date.today().year
 month = date.today().month
 day = date.today().day
-model_save_path = f'../weight/{year}{month}{day}/{structure}_{reg}_{in_len}_{out_len}_{step}.h5'
+model_save_path = '/home/murata/project/NonLinearModeling/weight/2020212/generator_denoise_LSTM_5280_5280_64.h5'
+# model_save_path = f'../weight/{year}{month}{day}/{structure}_{reg}_{in_len}_{out_len}_{step}.h5'
 model.load_weights(model_save_path)
 
 
@@ -277,6 +278,8 @@ if reg == 'mm':
 
 elif reg == 'std':
     predict = predict[0] * predict[0].std() + predict[0].mean()
+else:
+    predict = predict[0]
 
 sf.write(f'../result_wave/{year}{month}{day}/{wav_num}_{structure}_{reg}_{in_len}_{out_len}_{step}.wav',
          predict, 44100, subtype='PCM_16')  # 16bit 44.1kHz
@@ -294,7 +297,7 @@ def signal_fft(signal, N):  # FFTするsignal長と窓長Nは同じサンプル�
     return spectrum, half_spectrum_dBV
 
 
-path = f'./result_wave/{year}{month}{day}/{wav_num}_{structure}_{reg}_{in_len}_{out_len}_{step}.wav'
+path = f'../result_wave/{year}{month}{day}/{wav_num}_{structure}_{reg}_{in_len}_{out_len}_{step}.wav'
 out_data, fs = sf.read(path)
 _, out_half_spectrum_dBV = signal_fft(out_data, len(out_data))
 f2 = np.arange(0, fs/2, (fs/2)/out_half_spectrum_dBV.shape[0])  # 横軸周波数軸[Hz]
@@ -320,13 +323,13 @@ plt.rcParams['figure.dpi'] = 300
 plt.figure(figsize=(15, 10))  # figure size in inch, 横×縦
 plt.semilogx(f1, out_half_spectrum_dBV, 'r', label=label[0])
 plt.semilogx(f1, in_half_spectrum_dBV, 'b', label=label[1])
-plt.xlim([1, 22050])
+plt.xlim([20, 22000])
 plt.xlabel('Frequency[Hz]', fontsize=15)
 plt.ylabel('Amplitude[dB]', fontsize=15)
 plt.legend(loc='upper right', fontsize=15)
 
 # save
-plt.savefig(f'figure/{year}{month}{day}/fft_{wav_num}}_{structure}_{reg}_{in_len}_{out_len}_{step}.jpg',
+plt.savefig(f'../figure/{year}{month}{day}/fft_{wav_num}_{structure}_{reg}_{in_len}_{out_len}_{step}.jpg',
             bbox_inches="tight", pad_inches=0.05)
 
 sub = max(in_half_spectrum_dBV)-max(out_half_spectrum_dBV)
@@ -337,11 +340,11 @@ in_half_spectrum_dBV = in_half_spectrum_dBV - sub
 plt.figure(figsize=(15, 10))  # figure size in inch, 横×縦
 plt.semilogx(f1, out_half_spectrum_dBV, 'r', label=label[0])
 plt.semilogx(f1, in_half_spectrum_dBV, 'b', label=label[1])
-plt.xlim([1, 22050])
+plt.xlim([20, 22000])
 plt.xlabel('Frequency[Hz]', fontsize=15)
 plt.ylabel('Amplitude[dB]', fontsize=15)
 plt.legend(loc='upper right', fontsize=15)
 
 # save
-plt.savefig(f'figure/{year}{month}{day}/fix_fft_{wav_num}_{structure}_{reg}_{in_len}_{out_len}_{step}.jpg',
+plt.savefig(f'../figure/{year}{month}{day}/fix_fft_{wav_num}_{structure}_{reg}_{in_len}_{out_len}_{step}.jpg',
             bbox_inches="tight", pad_inches=0.05)
